@@ -106,7 +106,13 @@ public class AuthorizationServerConfig {
         cfg.setAllowCredentials(false);
         cfg.setMaxAge(Duration.ofHours(1));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", cfg);
+        // Only the endpoints the SPA actually FETCHES cross-origin. /oauth2/authorize and /login are
+        // browser navigations (not fetch) — CORS-processing them wrongly rejects the post-login
+        // redirect, whose Origin is the AS's own host, as an "Invalid CORS request".
+        for (String path : List.of("/.well-known/**", "/oauth2/jwks", "/oauth2/token",
+                "/oauth2/revoke", "/oauth2/introspect", "/userinfo", "/connect/userinfo")) {
+            source.registerCorsConfiguration(path, cfg);
+        }
         return source;
     }
 

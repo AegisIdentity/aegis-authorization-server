@@ -83,6 +83,25 @@ class AuthorizationServerFlowsIT {
     }
 
     @Test
+    void authorize_is_not_cors_restricted_for_navigations() throws Exception {
+        // Regression: the post-login redirect to /oauth2/authorize carries the AS's own Origin; CORS
+        // must NOT reject it ("Invalid CORS request"). CORS only covers the fetched endpoints.
+        var result = mockMvc.perform(get("/oauth2/authorize")
+                        .header("Origin", "http://authorization-server:9000")
+                        .param("response_type", "code")
+                        .param("client_id", "aegis-dev-spa")
+                        .param("redirect_uri", "http://localhost:3000/callback")
+                        .param("scope", "openid")
+                        .param("code_challenge", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+                        .param("code_challenge_method", "S256"))
+                .andReturn();
+        org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus())
+                .as("must not be a 403 CORS rejection").isNotEqualTo(403);
+        org.assertj.core.api.Assertions.assertThat(result.getResponse().getContentAsString())
+                .doesNotContain("Invalid CORS request");
+    }
+
+    @Test
     void jwks_endpoint_exposes_a_signing_key() throws Exception {
         mockMvc.perform(get("/oauth2/jwks"))
                 .andExpect(status().isOk())
