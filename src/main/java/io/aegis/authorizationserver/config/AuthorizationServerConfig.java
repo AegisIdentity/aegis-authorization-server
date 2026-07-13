@@ -10,6 +10,7 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -40,6 +41,9 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.http.MediaType;
 
 /**
@@ -69,6 +73,10 @@ public class AuthorizationServerConfig {
 
         http
                 .securityMatcher(endpointsMatcher)
+                // Allow the SPA (console/portal) to fetch discovery/JWKS and do the PKCE token
+                // exchange cross-origin. Without this, oidc-client-ts's metadata fetch is CORS-blocked
+                // and sign-in silently never redirects.
+                .cors(Customizer.withDefaults())
                 .with(configurer, authorizationServer -> authorizationServer
                         .oidc(Customizer.withDefaults()))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
@@ -81,6 +89,25 @@ public class AuthorizationServerConfig {
                 // Accept our own tokens on protocol endpoints that require them (e.g. userinfo).
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()));
         return http.build();
+    }
+
+    /**
+     * CORS for the OIDC endpoints so a browser SPA (the console/portal) can fetch discovery + JWKS
+     * and perform the PKCE code exchange cross-origin. A public client's token exchange needs no
+     * cookies, so credentials stay off. Origins are configurable via {@code aegis.spa.origins}.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${aegis.spa.origins:http://localhost:5173,http://localhost:3000}") List<String> origins) {
+        CorsConfiguration cfg = new CorsConfiguration();
+        cfg.setAllowedOrigins(origins);
+        cfg.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        cfg.setAllowCredentials(false);
+        cfg.setMaxAge(Duration.ofHours(1));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", cfg);
+        return source;
     }
 
     /** Registered clients, persisted in Postgres. */

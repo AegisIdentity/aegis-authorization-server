@@ -57,6 +57,16 @@ class AuthorizationServerFlowsIT {
     }
 
     @Test
+    void discovery_allows_cors_from_the_spa_origin() throws Exception {
+        // The browser SPA fetches discovery cross-origin before it can start sign-in; without this
+        // header the fetch is blocked and sign-in silently never redirects.
+        mockMvc.perform(get("/.well-known/openid-configuration")
+                        .header("Origin", "http://localhost:5173"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
+    }
+
+    @Test
     void jwks_endpoint_exposes_a_signing_key() throws Exception {
         mockMvc.perform(get("/oauth2/jwks"))
                 .andExpect(status().isOk())
