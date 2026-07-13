@@ -173,6 +173,7 @@ public class AuthorizationServerConfig {
                 .scope("tenant:read")
                 .scope("tenant:admin")
                 .scope("applications:admin")
+                .scope("idp:admin")
                 .clientSettings(ClientSettings.builder()
                         // First-party console: skip the consent screen for a smooth admin UX.
                         .requireAuthorizationConsent(false)
