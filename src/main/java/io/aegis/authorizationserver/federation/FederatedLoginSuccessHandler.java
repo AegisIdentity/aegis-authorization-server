@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -15,6 +16,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
@@ -73,17 +75,35 @@ public class FederatedLoginSuccessHandler implements AuthenticationSuccessHandle
         delegate.onAuthenticationSuccess(request, response, aegisAuth);
     }
 
+    /**
+     * Resolves the email used to link/provision — the account key — and only accepts an email the
+     * provider asserts as <strong>verified</strong>. Without this, an attacker could set a victim's
+     * (unverified) address at a social provider and take over the victim's Aegis account via JIT
+     * matching-by-email. For OIDC we require {@code email_verified == true}; for OAuth2 (GitHub) whose
+     * userinfo carries no verification flag, we ignore the mutable {@code email} attribute entirely and
+     * key on the provider-bound {@code login} (GitHub's stable noreply address), which cannot
+     * impersonate an arbitrary address.
+     */
     private static String extractEmail(OAuth2User user) {
-        String email = user.getAttribute("email");
-        if (StringUtils.hasText(email)) {
-            return email;
+        if (user instanceof OidcUser) {
+            String email = user.getAttribute("email");
+            if (StringUtils.hasText(email) && isVerified(user.getAttribute("email_verified"))) {
+                return email.toLowerCase(Locale.ROOT);
+            }
+            throw new IllegalStateException("OIDC provider returned no verified email; refusing to link");
         }
-        // GitHub without a public email / email scope: synthesize its stable noreply address.
+        // Non-OIDC provider (GitHub): the `email` attribute is not guaranteed verified, so it is not
+        // trusted. The login handle is bound to the provider account and safe to key on.
         String login = user.getAttribute("login");
         if (StringUtils.hasText(login)) {
-            return login + "@users.noreply.github.com";
+            return (login + "@users.noreply.github.com").toLowerCase(Locale.ROOT);
         }
-        throw new IllegalStateException("federated provider returned no email to identify the user");
+        throw new IllegalStateException("provider returned no verified identifier; refusing to link");
+    }
+
+    private static boolean isVerified(Object emailVerified) {
+        return (emailVerified instanceof Boolean b && b)
+                || (emailVerified instanceof String s && "true".equalsIgnoreCase(s));
     }
 
     private static String extractUsername(OAuth2User user, String email) {
