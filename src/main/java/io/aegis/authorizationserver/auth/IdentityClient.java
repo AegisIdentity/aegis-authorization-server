@@ -1,8 +1,5 @@
 package io.aegis.authorizationserver.auth;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -10,38 +7,26 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * Verifies resource-owner credentials against {@code identity-service} (the credential store).
- *
- * <p>Auth here: the AS mints a short-lived <em>service JWT</em> signed with its own key
- * ({@link JwtEncoder} over the same JWKSource that signs user tokens), carrying the
- * {@code identity:users:authenticate} scope. identity-service validates it against the AS's JWKS like
- * any other bearer token — no circular call to the token endpoint, no static shared secret.
+ * Verifies resource-owner credentials against {@code identity-service} (the credential store) and
+ * JIT-provisions federated users. Authenticates to identity-service with the AS's own service JWT
+ * ({@link ServiceTokenProvider}) — no circular call to the token endpoint, no static shared secret.
  */
 @Component
 public class IdentityClient {
 
     private static final Logger log = LoggerFactory.getLogger(IdentityClient.class);
 
-    private final JwtEncoder jwtEncoder;
-    private final String issuer;
+    private final ServiceTokenProvider serviceToken;
     private final RestClient restClient;
 
-    private volatile String cachedToken;
-    private volatile Instant cachedExpiry;
-
-    public IdentityClient(JwtEncoder jwtEncoder,
-                          @Value("${aegis.issuer:http://localhost:9000}") String issuer,
+    public IdentityClient(ServiceTokenProvider serviceToken,
                           @Value("${aegis.identity-service.base-url:http://localhost:9102}") String baseUrl) {
-        this.jwtEncoder = jwtEncoder;
-        this.issuer = issuer;
+        this.serviceToken = serviceToken;
         this.restClient = RestClient.builder().baseUrl(baseUrl).build();
     }
 
@@ -50,7 +35,7 @@ public class IdentityClient {
         try {
             AuthResult result = restClient.post()
                     .uri("/api/v1/users:authenticate")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken.token())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("tenantId", tenantId, "username", username, "password", password))
                     .retrieve()
@@ -72,25 +57,28 @@ public class IdentityClient {
         return Optional.empty();
     }
 
+    /**
+     * JIT-provisions (find-or-create by email) a user for a federated login and returns the resulting
+     * principal. Throws on failure — a federated login must not proceed without a real Aegis user.
+     */
+    public AegisUserPrincipal provisionFederated(String tenantId, String email, String preferredUsername) {
+        ProvisionResult result = restClient.post()
+                .uri("/api/v1/users:provision")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("tenantId", tenantId, "email", email,
+                        "username", preferredUsername == null ? "" : preferredUsername))
+                .retrieve()
+                .body(ProvisionResult.class);
+        if (result == null || result.id() == null) {
+            throw new IllegalStateException("identity-service returned no user for provisioning");
+        }
+        return new AegisUserPrincipal(tenantId, result.id(), result.username());
+    }
+
     private record AuthResult(String outcome, String userId) {
     }
 
-    private synchronized String serviceToken() {
-        Instant now = Instant.now();
-        if (cachedToken != null && cachedExpiry != null && cachedExpiry.isAfter(now.plusSeconds(30))) {
-            return cachedToken;
-        }
-        Instant expiry = now.plus(Duration.ofMinutes(5));
-        JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer(issuer)
-                .subject("aegis-authorization-server")
-                .audience(List.of("aegis-internal"))
-                .issuedAt(now)
-                .expiresAt(expiry)
-                .claim("scope", "identity:users:authenticate")
-                .build();
-        cachedToken = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
-        cachedExpiry = expiry;
-        return cachedToken;
+    private record ProvisionResult(String id, String tenantId, String username, String email, String status) {
     }
 }

@@ -30,6 +30,9 @@ aegis:
   # Login delegates credential verification to identity-service (the credential store).
   identity-service:
     base-url: ${IDENTITY_SERVICE_URL:http://localhost:9102}
+  # Federated login resolves per-tenant provider config from the social-broker.
+  social-broker:
+    base-url: ${SOCIAL_BROKER_URL:http://localhost:9105}
 
 management:
   endpoints:

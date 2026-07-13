@@ -37,6 +37,12 @@
             <div class="alert err" th:if="${param.error}">Invalid username or password.</div>
             <div class="alert ok" th:if="${param.logout}">You have been signed out.</div>
 
+            <div class="providers" th:if="${providers != null and !providers.isEmpty()}">
+                <a class="social" th:each="p : ${providers}" th:href="@{${p.url}}"
+                   th:text="'Continue with ' + ${p.label}">Continue with a provider</a>
+                <div class="divider"><span>or sign in with your password</span></div>
+            </div>
+
             <form th:action="@{/login}" method="post">
                 <label for="tenant">Organization</label>
                 <input type="text" id="tenant" name="tenant" autocomplete="organization"

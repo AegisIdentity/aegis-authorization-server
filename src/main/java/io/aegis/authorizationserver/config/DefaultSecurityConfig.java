@@ -2,6 +2,7 @@ package io.aegis.authorizationserver.config;
 
 import io.aegis.authorizationserver.auth.IdentityAuthenticationProvider;
 import io.aegis.authorizationserver.auth.TenantAuthenticationDetailsSource;
+import io.aegis.authorizationserver.federation.FederatedLoginSuccessHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -24,7 +25,8 @@ public class DefaultSecurityConfig {
     public SecurityFilterChain defaultSecurityFilterChain(
             HttpSecurity http,
             IdentityAuthenticationProvider identityAuthenticationProvider,
-            TenantAuthenticationDetailsSource tenantAuthenticationDetailsSource) throws Exception {
+            TenantAuthenticationDetailsSource tenantAuthenticationDetailsSource,
+            FederatedLoginSuccessHandler federatedLoginSuccessHandler) throws Exception {
         http
                 .headers(headers -> headers
                         // Strict CSP, but deliberately WITHOUT `form-action`: this is an OAuth
@@ -45,7 +47,14 @@ public class DefaultSecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .authenticationDetailsSource(tenantAuthenticationDetailsSource)
-                        .permitAll());
+                        .permitAll())
+                // "Sign in with <provider>": the tenant's registered social/OIDC providers. The client
+                // registration is resolved per-tenant from the broker (BrokerClientRegistrationRepository);
+                // on success the external identity is JIT-provisioned and swapped for an Aegis principal
+                // before the authorize flow resumes.
+                .oauth2Login(oauth2 -> oauth2
+                        .loginPage("/login")
+                        .successHandler(federatedLoginSuccessHandler));
         return http.build();
     }
 }

@@ -161,3 +161,44 @@ button:hover {
     display: none;
   }
 }
+
+/* Federated ("Sign in with X") providers */
+.providers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.social {
+  display: block;
+  text-align: center;
+  padding: 11px 14px;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2a44;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background .15s, border-color .15s;
+}
+.social:hover {
+  background: #f5f7fb;
+  border-color: var(--p);
+}
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+  margin: 14px 0 4px;
+}
+.divider::before, .divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e5e9f2;
+}
+.divider span {
+  padding: 0 12px;
+}
