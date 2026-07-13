@@ -27,6 +27,9 @@ spring:
 aegis:
   # Single issuer for v1; per-tenant issuers (https://host/t/{tenantId}) are a documented enhancement.
   issuer: ${AEGIS_ISSUER:http://localhost:9000}
+  # Login delegates credential verification to identity-service (the credential store).
+  identity-service:
+    base-url: ${IDENTITY_SERVICE_URL:http://localhost:9102}
 
 management:
   endpoints:

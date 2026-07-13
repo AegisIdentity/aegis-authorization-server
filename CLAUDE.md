@@ -7,8 +7,11 @@
 - `config/AuthorizationServerConfig` — protocol filter chain (Security 7.1 API:
   `new OAuth2AuthorizationServerConfigurer()` + `http.with(...)`; the config classes were folded into
   `spring-security-config`), JDBC repos, JWK source, per-client `tenant` claim customizer, issuer.
-- `config/DefaultSecurityConfig` — `/login` form chain + **dev-only** in-memory user. Production swaps
-  in an identity-service-backed `UserDetailsService` (Argon2, per-tenant).
+- `config/DefaultSecurityConfig` — `/login` form chain (Organization + Username + Password).
+  Credentials are verified **per-tenant against identity-service** via `auth/IdentityAuthenticationProvider`
+  + `auth/IdentityClient` (the AS mints a short-lived service JWT with its own key). The token's
+  `tenant` claim is the authenticated user's real tenant (set in the JWT customizer from `AegisUserPrincipal`).
+- `config/ApiSecurityConfig` — resource-server chain for `/api/**` (applications admin API), scope-gated.
 - `resources/db/postgresql/*.sql` — Postgres-adapted AS schemas (shipped SQL uses `blob`; Postgres
   needs `text`). Regenerate on AS upgrade — see that folder`\s README.
 

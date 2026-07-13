@@ -22,7 +22,10 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import io.aegis.authorizationserver.auth.AegisUserPrincipal;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -213,11 +216,25 @@ public class AuthorizationServerConfig {
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
         return context -> {
-            Object tenant = context.getRegisteredClient().getClientSettings().getSetting("tenant");
-            if (tenant != null) {
-                context.getClaims().claim("tenant", tenant.toString());
+            Object principal = context.getPrincipal() == null ? null : context.getPrincipal().getPrincipal();
+            if (principal instanceof AegisUserPrincipal user) {
+                // Interactive login: the tenant is the authenticated user's real tenant.
+                context.getClaims().claim("tenant", user.tenantId());
+                context.getClaims().claim("uid", user.userId());
+            } else {
+                // client_credentials (M2M) and other flows: fall back to the client's configured tenant.
+                Object tenant = context.getRegisteredClient().getClientSettings().getSetting("tenant");
+                if (tenant != null) {
+                    context.getClaims().claim("tenant", tenant.toString());
+                }
             }
         };
+    }
+
+    /** Signs the AS's own internal service tokens (used by IdentityClient to call identity-service). */
+    @Bean
+    public JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        return new NimbusJwtEncoder(jwkSource);
     }
 
     /** Dev/test JWK source — see class javadoc for the production KMS-backed path. */

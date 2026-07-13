@@ -38,8 +38,11 @@
             <div class="alert ok" th:if="${param.logout}">You have been signed out.</div>
 
             <form th:action="@{/login}" method="post">
+                <label for="tenant">Organization</label>
+                <input type="text" id="tenant" name="tenant" autocomplete="organization"
+                       placeholder="your-org" autofocus/>
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" autocomplete="username" autofocus/>
+                <input type="text" id="username" name="username" autocomplete="username"/>
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" autocomplete="current-password"/>
                 <button type="submit">Sign in</button>
