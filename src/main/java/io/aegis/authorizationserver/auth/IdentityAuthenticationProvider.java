@@ -6,7 +6,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class IdentityAuthenticationProvider implements AuthenticationProvider {
 
-    private static final List<GrantedAuthority> USER = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+    private static final SimpleGrantedAuthority ROLE_USER = new SimpleGrantedAuthority("ROLE_USER");
 
     private final IdentityClient identityClient;
 
@@ -38,7 +38,17 @@ public class IdentityAuthenticationProvider implements AuthenticationProvider {
         AegisUserPrincipal principal = identityClient.authenticate(tenant, username, password)
                 .orElseThrow(() -> new BadCredentialsException("invalid organization, username, or password"));
 
-        var result = new UsernamePasswordAuthenticationToken(principal, null, USER);
+        // Grant ROLE_USER plus a PASSWORD authentication-factor authority. Spring Authorization Server
+        // derives the OIDC id_token `auth_time` from the most recent FactorGrantedAuthority#issuedAt and
+        // fails id_token generation ("authenticationTime cannot be null") when no factor authority is
+        // present — so a custom provider that authenticates by password must record that factor here.
+        var authorities = List.of(ROLE_USER,
+                FactorGrantedAuthority.fromAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
+        var result = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        // Carry the web details (remote address / session / tenant). This is persisted inside the saved
+        // OAuth2Authorization, so TenantWebAuthenticationDetails is made JSON round-trippable (see its
+        // reconstruction constructor + TenantWebAuthenticationDetailsMixin). Note: even if we left this
+        // null, ProviderManager#copyDetails would re-attach the request's details onto the result.
         result.setDetails(authentication.getDetails());
         return result;
     }

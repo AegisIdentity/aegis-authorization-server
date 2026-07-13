@@ -41,6 +41,11 @@ class IdentityAuthenticationProviderTest {
         var principal = (AegisUserPrincipal) result.getPrincipal();
         assertThat(principal.tenantId()).isEqualTo("acme");
         assertThat(principal.username()).isEqualTo("alice");
+        // A PASSWORD authentication-factor authority must be present: the Authorization Server derives
+        // the OIDC id_token `auth_time` from it, and id_token generation fails without one.
+        assertThat(result.getAuthorities()).anyMatch(a ->
+                org.springframework.security.core.authority.FactorGrantedAuthority.PASSWORD_AUTHORITY
+                        .equals(a.getAuthority()));
     }
 
     @Test

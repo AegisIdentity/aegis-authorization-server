@@ -14,6 +14,16 @@ public class TenantWebAuthenticationDetails extends WebAuthenticationDetails {
         this.tenant = request.getParameter("tenant");
     }
 
+    /**
+     * Reconstruction constructor used by the JDBC authorization store's Jackson deserializer (via
+     * {@link TenantWebAuthenticationDetailsMixin}): the authenticated token — including these details —
+     * is persisted inside the saved {@code OAuth2Authorization} and re-read at the token endpoint.
+     */
+    public TenantWebAuthenticationDetails(String remoteAddress, String sessionId, String tenant) {
+        super(remoteAddress, sessionId);
+        this.tenant = tenant;
+    }
+
     public String getTenant() {
         return tenant;
     }

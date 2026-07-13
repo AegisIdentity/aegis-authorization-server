@@ -24,6 +24,19 @@
   each in KMS and rotates with overlap, and must NOT regenerate on restart. See ARCHITECTURE.md §7.
 - Every new client/grant change ships with a test (unregistered client rejected, wrong redirect_uri
   rejected — the common real-world misconfigs).
+- **Interactive-login principal must round-trip through the JDBC authorization store.** An
+  authorization_code authorization persists the login `Authentication`, whose principal is
+  `AegisUserPrincipal` and whose details are `TenantWebAuthenticationDetails` (both custom). The store
+  uses Jackson 3 (`tools.jackson`) with a locked-down `PolymorphicTypeValidator`, so
+  `AuthorizationServerConfig#authorizationService` swaps in a `JsonMapper` that (a) allowlists the
+  `io.aegis.authorizationserver.auth` package and (b) registers mix-ins giving both types a JSON
+  creator — on BOTH the read row mapper and the write parameters mapper. Any new custom type stored in
+  the authentication needs the same treatment, or login 500s at the token endpoint with
+  `InvalidTypeIdException`/"no Creators". Covered by
+  `AuthorizationServerFlowsIT#authorization_with_a_custom_login_principal_round_trips_through_the_store`.
+- **The login token must carry a `FactorGrantedAuthority`** (`IdentityAuthenticationProvider` grants
+  `FACTOR_PASSWORD`). SAS derives the OIDC id_token `auth_time` from the latest factor's `issuedAt`;
+  without a factor authority, id_token generation fails with "authenticationTime cannot be null".
 
 ## Build / test
 `mvn verify` (needs Docker for Testcontainers Postgres). Coverage floor 0.60.

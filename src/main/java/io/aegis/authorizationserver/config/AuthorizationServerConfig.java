@@ -23,6 +23,13 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import io.aegis.authorizationserver.auth.AegisUserPrincipal;
+import io.aegis.authorizationserver.auth.AegisUserPrincipalMixin;
+import io.aegis.authorizationserver.auth.TenantWebAuthenticationDetails;
+import io.aegis.authorizationserver.auth.TenantWebAuthenticationDetailsMixin;
+import org.springframework.security.jackson.SecurityJacksonModules;
+import tools.jackson.databind.JacksonModule;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
@@ -200,7 +207,36 @@ public class AuthorizationServerConfig {
     @Bean
     public OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
                                                            RegisteredClientRepository clients) {
-        return new JdbcOAuth2AuthorizationService(jdbcTemplate, clients);
+        JdbcOAuth2AuthorizationService service = new JdbcOAuth2AuthorizationService(jdbcTemplate, clients);
+        // An authorization_code authorization persists the interactive-login Authentication — whose
+        // principal is our AegisUserPrincipal. The store's default Jackson mapper trusts only Spring's
+        // own types, so re-reading the row at the token endpoint fails with an InvalidTypeIdException
+        // (HTTP 500 right after login). Swap in a mapper that also trusts + can deserialize our type.
+        JsonMapper jsonMapper = authorizationJsonMapper();
+        service.setAuthorizationRowMapper(
+                new JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationRowMapper(clients, jsonMapper));
+        service.setAuthorizationParametersMapper(
+                new JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationParametersMapper(jsonMapper));
+        return service;
+    }
+
+    /**
+     * The JDBC authorization store's Jackson mapper, built exactly like Spring's default (all
+     * {@code SecurityJacksonModules}, including the Authorization Server module) but with two additions:
+     * our {@code io.aegis.authorizationserver.auth} package added to the polymorphic-type allowlist, and
+     * a mix-in giving {@link AegisUserPrincipal} a canonical-constructor JSON creator. Read and write
+     * use the same mapper so the persisted principal round-trips symmetrically.
+     */
+    private static JsonMapper authorizationJsonMapper() {
+        ClassLoader loader = AuthorizationServerConfig.class.getClassLoader();
+        BasicPolymorphicTypeValidator.Builder typeValidator = BasicPolymorphicTypeValidator.builder()
+                .allowIfSubType("io.aegis.authorizationserver.auth.");
+        List<JacksonModule> modules = SecurityJacksonModules.getModules(loader, typeValidator);
+        return JsonMapper.builder()
+                .addModules(modules)
+                .addMixIn(AegisUserPrincipal.class, AegisUserPrincipalMixin.class)
+                .addMixIn(TenantWebAuthenticationDetails.class, TenantWebAuthenticationDetailsMixin.class)
+                .build();
     }
 
     @Bean

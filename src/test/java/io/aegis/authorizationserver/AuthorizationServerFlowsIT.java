@@ -38,6 +38,9 @@ class AuthorizationServerFlowsIT {
     @Autowired
     org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository clients;
 
+    @Autowired
+    org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService authorizationService;
+
     MockMvc mockMvc;
 
     @BeforeEach
@@ -154,6 +157,55 @@ class AuthorizationServerFlowsIT {
                 .as("token is signed with acme's key").isEqualTo(acmeKid);
         org.assertj.core.api.Assertions.assertThat((String) com.jayway.jsonpath.JsonPath.read(payload, "$.iss"))
                 .endsWith("/acme");
+    }
+
+    @Test
+    void authorization_with_a_custom_login_principal_round_trips_through_the_store() {
+        // Regression for the "500 right after login" bug: an authorization_code authorization persists
+        // the interactive-login Authentication, whose principal is our AegisUserPrincipal. The JDBC
+        // store's default Jackson mapper does not trust that type, so the token-endpoint read-back threw
+        // InvalidTypeIdException. The store must now save AND re-read it, preserving the tenant.
+        var client = clients.findByClientId("aegis-dev-spa");
+        var login = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                new io.aegis.authorizationserver.auth.AegisUserPrincipal("acme", "u-1", "alice"), null,
+                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"),
+                        org.springframework.security.core.authority.FactorGrantedAuthority.fromAuthority(
+                                org.springframework.security.core.authority.FactorGrantedAuthority.PASSWORD_AUTHORITY)));
+        // Reproduce the FULL persisted graph: ProviderManager copies the request's web details onto the
+        // authenticated token, so the custom TenantWebAuthenticationDetails must round-trip too.
+        login.setDetails(new io.aegis.authorizationserver.auth.TenantWebAuthenticationDetails(
+                "203.0.113.7", "session-1", "acme"));
+
+        var authorization = org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+                .withRegisteredClient(client)
+                .id("it-authz-roundtrip")
+                .principalName("alice")
+                .authorizationGrantType(
+                        org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute(java.security.Principal.class.getName(), login)
+                .build();
+
+        authorizationService.save(authorization);
+        var loaded = authorizationService.findById("it-authz-roundtrip");
+
+        org.assertj.core.api.Assertions.assertThat(loaded).isNotNull();
+        Object principal = ((org.springframework.security.core.Authentication)
+                loaded.getAttribute(java.security.Principal.class.getName())).getPrincipal();
+        org.assertj.core.api.Assertions.assertThat(principal)
+                .isInstanceOf(io.aegis.authorizationserver.auth.AegisUserPrincipal.class);
+        org.assertj.core.api.Assertions.assertThat(
+                        ((io.aegis.authorizationserver.auth.AegisUserPrincipal) principal).tenantId())
+                .isEqualTo("acme");
+
+        Object details = ((org.springframework.security.core.Authentication)
+                loaded.getAttribute(java.security.Principal.class.getName())).getDetails();
+        org.assertj.core.api.Assertions.assertThat(details)
+                .isInstanceOf(io.aegis.authorizationserver.auth.TenantWebAuthenticationDetails.class);
+        org.assertj.core.api.Assertions.assertThat(
+                        ((io.aegis.authorizationserver.auth.TenantWebAuthenticationDetails) details).getTenant())
+                .isEqualTo("acme");
+
+        authorizationService.remove(loaded);
     }
 
     @Test
