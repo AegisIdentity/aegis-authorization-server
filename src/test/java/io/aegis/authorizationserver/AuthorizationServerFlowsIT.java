@@ -122,6 +122,41 @@ class AuthorizationServerFlowsIT {
     }
 
     @Test
+    void per_tenant_issuers_use_per_tenant_signing_keys() throws Exception {
+        // Discovery is tenant-specific (issuer + endpoints carry the /{tenant} path).
+        mockMvc.perform(get("/acme/.well-known/openid-configuration"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issuer", org.hamcrest.Matchers.endsWith("/acme")))
+                .andExpect(jsonPath("$.jwks_uri", org.hamcrest.Matchers.containsString("/acme/oauth2/jwks")));
+
+        // Each tenant's JWKS exposes a distinct key.
+        String acmeJwks = mockMvc.perform(get("/acme/oauth2/jwks")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String globexJwks = mockMvc.perform(get("/globex/oauth2/jwks")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String acmeKid = com.jayway.jsonpath.JsonPath.read(acmeJwks, "$.keys[0].kid");
+        String globexKid = com.jayway.jsonpath.JsonPath.read(globexJwks, "$.keys[0].kid");
+        org.assertj.core.api.Assertions.assertThat(acmeKid).isEqualTo("aegis-acme");
+        org.assertj.core.api.Assertions.assertThat(globexKid).isEqualTo("aegis-globex");
+        org.assertj.core.api.Assertions.assertThat(acmeKid).isNotEqualTo(globexKid);
+
+        // A token minted at /acme is signed with acme's key (header kid) and carries iss=.../acme.
+        String tokenBody = mockMvc.perform(post("/acme/oauth2/token")
+                        .header("Authorization", basic("aegis-dev-m2m", "dev-only-change-me"))
+                        .param("grant_type", "client_credentials").param("scope", "identity:users:read")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String accessToken = com.jayway.jsonpath.JsonPath.read(tokenBody, "$.access_token");
+        String[] parts = accessToken.split("\\.");
+        String jwsHeader = new String(Base64.getUrlDecoder().decode(parts[0]));
+        String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+        org.assertj.core.api.Assertions.assertThat((String) com.jayway.jsonpath.JsonPath.read(jwsHeader, "$.kid"))
+                .isEqualTo("aegis-acme");
+        org.assertj.core.api.Assertions.assertThat((String) com.jayway.jsonpath.JsonPath.read(payload, "$.iss"))
+                .endsWith("/acme");
+    }
+
+    @Test
     void client_credentials_grant_issues_a_scoped_access_token() throws Exception {
         mockMvc.perform(post("/oauth2/token")
                         .header("Authorization", basic("aegis-dev-m2m", "dev-only-change-me"))

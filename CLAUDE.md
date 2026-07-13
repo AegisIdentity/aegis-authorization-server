@@ -17,8 +17,11 @@
 
 ## Non-negotiables (security)
 - PKCE stays mandatory for public clients; no implicit / no ROPC (OAuth 2.1, ADR-0004).
-- **Signing key**: dev generates RSA at startup; production loads per-tenant keys from KMS and must
-  NOT regenerate on restart (invalidates all tokens). See ARCHITECTURE.md §7 / ADR-0007.
+- **Per-tenant issuers + signing keys** (`auth/TenantJwkSource`, `multipleIssuersAllowed(true)`, no
+  explicit issuer): the issuer is the `/{tenant}` path prefix; each tenant gets its own RSA key/`kid`
+  (`aegis-<tenant>`), so a token for tenant A can't be forged for B. Root path (no prefix) = default
+  key, so the single-issuer console flow still works. Dev generates keys on demand; production wraps
+  each in KMS and rotates with overlap, and must NOT regenerate on restart. See ARCHITECTURE.md §7.
 - Every new client/grant change ships with a test (unregistered client rejected, wrong redirect_uri
   rejected — the common real-world misconfigs).
 

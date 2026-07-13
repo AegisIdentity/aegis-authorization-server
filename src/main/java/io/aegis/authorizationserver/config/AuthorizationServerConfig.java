@@ -237,30 +237,8 @@ public class AuthorizationServerConfig {
         return new NimbusJwtEncoder(jwkSource);
     }
 
-    /** Dev/test JWK source — see class javadoc for the production KMS-backed path. */
-    @Bean
-    public JWKSource<SecurityContext> jwkSource() {
-        RSAKey rsaKey = generateRsaKey();
-        JWKSet jwkSet = new JWKSet(rsaKey);
-        return new ImmutableJWKSet<>(jwkSet);
-    }
-
-    private static RSAKey generateRsaKey() {
-        KeyPair keyPair;
-        try {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-            generator.initialize(2048);
-            keyPair = generator.generateKeyPair();
-        } catch (Exception ex) {
-            throw new IllegalStateException("unable to generate RSA signing key", ex);
-        }
-        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-        RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
-        return new RSAKey.Builder(publicKey)
-                .privateKey(privateKey)
-                .keyID(UUID.randomUUID().toString())
-                .build();
-    }
+    // The JWKSource is io.aegis.authorizationserver.auth.TenantJwkSource (a @Component): it returns a
+    // per-tenant key based on the current request's issuer, so tokens are signed with the tenant's key.
 
     @Bean
     public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
@@ -268,12 +246,12 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    public AuthorizationServerSettings authorizationServerSettings(
-            @Value("${aegis.issuer:http://localhost:9000}") String issuer) {
-        // Single issuer for v1. Per-tenant issuers (https://host/t/{tenantId}) are enabled by
-        // multipleIssuersAllowed(true) + tenant-aware client/key resolution — see ARCHITECTURE.md §5.
+    public AuthorizationServerSettings authorizationServerSettings() {
+        // Per-tenant issuers: the issuer is resolved from the request's /{tenant} path prefix
+        // (do NOT set an explicit issuer, or it forces single-tenant mode). The root path (no prefix)
+        // keeps working as the default issuer. See the multi-tenancy design in ARCHITECTURE.md §5.
         return AuthorizationServerSettings.builder()
-                .issuer(issuer)
+                .multipleIssuersAllowed(true)
                 .build();
     }
 }
