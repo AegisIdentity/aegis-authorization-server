@@ -244,6 +244,47 @@ class AuthorizationServerFlowsIT {
     }
 
     @Test
+    void service_application_is_created_and_mints_a_tenant_scoped_client_credentials_token() throws Exception {
+        // A tenant admin registers a service (M2M) app for their backend; the tenant is taken from the
+        // admin's own token, not the body. The returned secret must then authenticate a client_credentials
+        // grant whose access token carries that tenant — the "call the management APIs from your backend"
+        // integration path end to end.
+        String body = mockMvc.perform(post("/api/v1/applications/service")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Acme Backend\",\"scopes\":[\"identity:users:read\",\"identity:users:write\"]}")
+                        .with(jwtForTenant("acme", "admin", "applications:admin")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tenant").value("acme"))
+                .andExpect(jsonPath("$.clientSecret").exists())
+                .andReturn().getResponse().getContentAsString();
+        String clientId = com.jayway.jsonpath.JsonPath.read(body, "$.clientId");
+        String clientSecret = com.jayway.jsonpath.JsonPath.read(body, "$.clientSecret");
+
+        String tokenBody = mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", basic(clientId, clientSecret))
+                        .param("grant_type", "client_credentials")
+                        .param("scope", "identity:users:read")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").exists())
+                .andReturn().getResponse().getContentAsString();
+        String accessToken = com.jayway.jsonpath.JsonPath.read(tokenBody, "$.access_token");
+        String payload = new String(Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]));
+        org.assertj.core.api.Assertions.assertThat((String) com.jayway.jsonpath.JsonPath.read(payload, "$.tenant"))
+                .as("service-client token carries the creating tenant").isEqualTo("acme");
+    }
+
+    @Test
+    void service_application_rejects_a_privilege_escalating_scope() throws Exception {
+        // applications:admin is not grantable to a service client — otherwise it could mint more clients.
+        mockMvc.perform(post("/api/v1/applications/service")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Sneaky\",\"scopes\":[\"applications:admin\"]}")
+                        .with(jwtForTenant("acme", "admin", "applications:admin")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void unregistered_client_is_rejected_at_the_token_endpoint() throws Exception {
         mockMvc.perform(post("/oauth2/token")
                         .header("Authorization", basic("does-not-exist", "whatever"))
