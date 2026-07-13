@@ -40,7 +40,7 @@ public class DefaultSecurityConfig {
                         .permissionsPolicyHeader(pp -> pp.policy(
                                 "geolocation=(), camera=(), microphone=()")))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/login", "/error", "/actuator/health",
+                        .requestMatchers("/login", "/login/theme.css", "/error", "/actuator/health",
                                 "/webjars/**", "/assets/**", "/favicon.ico").permitAll()
                         .anyRequest().authenticated())
                 .authenticationProvider(identityAuthenticationProvider)

@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>Sign in · Aegis</title>
+    <title th:text="'Sign in · ' + ${brand.productName}">Sign in · Aegis</title>
     <link rel="stylesheet" href="/assets/login.css"/>
+    <link rel="stylesheet" th:href="@{/login/theme.css(tenant=${brandTenant})}"/>
 </head>
 <body>
 <div class="wrap">
@@ -15,11 +16,11 @@
                 <path d="m9 12 2 2 4-4" stroke="#24347a" stroke-width="2" stroke-linecap="round"
                       stroke-linejoin="round"/>
             </svg>
-            Aegis Identity
+            <span th:text="${brand.productName}">Aegis Identity</span>
         </div>
-        <h1>One secure front door for every app.</h1>
-        <p>Sign in once and Aegis handles password, passkey, MFA, social, and SAML — for your whole
-            organization, on standards you can trust.</p>
+        <h1 th:text="${brand.signInHeading}">One secure front door for every app.</h1>
+        <p th:text="${brand.signInSubtitle}">Sign in once and Aegis handles password, passkey, MFA,
+            social, and SAML — for your whole organization, on standards you can trust.</p>
     </div>
 
     <div class="form">
@@ -30,8 +31,8 @@
                     <path d="m9 12 2 2 4-4" stroke="#ffffff" stroke-width="2" stroke-linecap="round"
                           stroke-linejoin="round"/>
                 </svg>
-                <h2>Sign in to Aegis</h2>
-                <p class="sub">Continue to the Aegis console</p>
+                <h2 th:text="'Sign in to ' + ${brand.productName}">Sign in to Aegis</h2>
+                <p class="sub">Continue to your organization</p>
             </div>
 
             <div class="alert err" th:if="${param.error}">Invalid username or password.</div>

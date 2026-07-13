@@ -1,5 +1,6 @@
 package io.aegis.authorizationserver.web;
 
+import io.aegis.authorizationserver.branding.BrandingClient;
 import io.aegis.authorizationserver.federation.BrokerClient;
 import io.aegis.authorizationserver.federation.BrokerClientRegistrationRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,10 +28,12 @@ public class LoginController {
     private static final Pattern TENANT_PATH = Pattern.compile("^/([^/]+)/oauth2/authorize");
 
     private final BrokerClient broker;
+    private final BrandingClient branding;
     private final RequestCache requestCache = new HttpSessionRequestCache();
 
-    public LoginController(BrokerClient broker) {
+    public LoginController(BrokerClient broker, BrandingClient branding) {
         this.broker = broker;
+        this.branding = branding;
     }
 
     @GetMapping("/login")
@@ -45,6 +48,10 @@ public class LoginController {
                     .toList();
             model.addAttribute("providers", providers);
         }
+        // Per-tenant sign-in branding (defaults for the root/console issuer). The color is applied via a
+        // same-origin theme stylesheet (see ThemeController) so it stays within the login page's strict CSP.
+        model.addAttribute("brand", branding.forTenant(tenant));
+        model.addAttribute("brandTenant", tenant == null ? "" : tenant);
         return "login";
     }
 
