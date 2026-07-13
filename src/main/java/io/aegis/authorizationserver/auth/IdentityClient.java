@@ -15,6 +15,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Verifies resource-owner credentials against {@code identity-service} (the credential store).
@@ -57,9 +58,16 @@ public class IdentityClient {
             if (result != null && "SUCCESS".equals(result.outcome())) {
                 return Optional.of(new AegisUserPrincipal(tenantId, result.userId(), username));
             }
-            log.debug("identity-service returned outcome={}", result == null ? "null" : result.outcome());
+            log.warn("Login denied: identity-service outcome={} for org={} user={}",
+                    result == null ? "null" : result.outcome(), tenantId, username);
+        } catch (RestClientResponseException ex) {
+            log.warn("Login could not be verified: identity-service returned HTTP {} for org={} user={}. "
+                    + "A 401 here usually means the AS→identity service token was rejected — restart "
+                    + "identity-service so it re-fetches the AS JWKS. Body: {}",
+                    ex.getStatusCode(), tenantId, username, ex.getResponseBodyAsString());
         } catch (Exception ex) {
-            log.warn("identity-service authenticate call failed: {}", ex.toString());
+            log.warn("Login could not be verified: identity-service unreachable for org={} user={}: {}",
+                    tenantId, username, ex.toString());
         }
         return Optional.empty();
     }

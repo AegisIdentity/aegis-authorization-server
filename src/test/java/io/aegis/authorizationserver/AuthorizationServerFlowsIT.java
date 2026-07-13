@@ -136,8 +136,8 @@ class AuthorizationServerFlowsIT {
                 .andReturn().getResponse().getContentAsString();
         String acmeKid = com.jayway.jsonpath.JsonPath.read(acmeJwks, "$.keys[0].kid");
         String globexKid = com.jayway.jsonpath.JsonPath.read(globexJwks, "$.keys[0].kid");
-        org.assertj.core.api.Assertions.assertThat(acmeKid).isEqualTo("aegis-acme");
-        org.assertj.core.api.Assertions.assertThat(globexKid).isEqualTo("aegis-globex");
+        org.assertj.core.api.Assertions.assertThat(acmeKid).startsWith("aegis-acme-");
+        org.assertj.core.api.Assertions.assertThat(globexKid).startsWith("aegis-globex-");
         org.assertj.core.api.Assertions.assertThat(acmeKid).isNotEqualTo(globexKid);
 
         // A token minted at /acme is signed with acme's key (header kid) and carries iss=.../acme.
@@ -151,7 +151,7 @@ class AuthorizationServerFlowsIT {
         String jwsHeader = new String(Base64.getUrlDecoder().decode(parts[0]));
         String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
         org.assertj.core.api.Assertions.assertThat((String) com.jayway.jsonpath.JsonPath.read(jwsHeader, "$.kid"))
-                .isEqualTo("aegis-acme");
+                .as("token is signed with acme's key").isEqualTo(acmeKid);
         org.assertj.core.api.Assertions.assertThat((String) com.jayway.jsonpath.JsonPath.read(payload, "$.iss"))
                 .endsWith("/acme");
     }

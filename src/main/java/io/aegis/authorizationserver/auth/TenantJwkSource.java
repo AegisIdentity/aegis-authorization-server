@@ -13,6 +13,7 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
 import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
@@ -72,9 +73,14 @@ public class TenantJwkSource implements JWKSource<SecurityContext> {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(2048);
             KeyPair keyPair = generator.generateKeyPair();
+            // kid = readable tenant prefix + a per-generation suffix. The suffix is essential: keys are
+            // regenerated on restart (dev), and a *stable* kid would make resource servers keep a stale
+            // key cached under the same kid and reject the new tokens. A fresh kid is unknown to the
+            // cache, so the decoder re-fetches the JWKS and self-heals. (Production persists keys in KMS.)
+            String prefix = tenant.equals(DEFAULT_TENANT) ? "aegis-default" : "aegis-" + tenant;
             RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
                     .privateKey((RSAPrivateKey) keyPair.getPrivate())
-                    .keyID(tenant.equals(DEFAULT_TENANT) ? "aegis-default" : "aegis-" + tenant)
+                    .keyID(prefix + "-" + UUID.randomUUID().toString().substring(0, 8))
                     .build();
             return new JWKSet(rsaKey);
         } catch (Exception ex) {
