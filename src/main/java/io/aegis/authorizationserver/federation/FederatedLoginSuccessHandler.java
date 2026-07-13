@@ -1,56 +1,39 @@
 package io.aegis.authorizationserver.federation;
 
-import io.aegis.authorizationserver.auth.AegisUserPrincipal;
-import io.aegis.authorizationserver.auth.IdentityClient;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.List;
 import java.util.Locale;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.FactorGrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
-import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.util.StringUtils;
 
 /**
- * Completes a federated (social/OIDC) login. Spring has already authenticated the user against the
- * external provider and produced an {@link OAuth2AuthenticationToken}; this handler maps that external
- * identity to an Aegis user — <strong>JIT-provisioning</strong> it into the tenant's directory (by
- * email) — and replaces the session authentication with a {@link AegisUserPrincipal}-based token so the
- * resumed {@code /oauth2/authorize} flow issues a tenant-scoped Aegis token (the JWT customizer reads
- * the tenant/uid from the principal). It then resumes the originally-requested authorize URL.
+ * Completes an OAuth2/OIDC federated login: maps the external identity, then delegates to
+ * {@link FederatedSessionEstablisher} to JIT-provision and resume the authorize flow.
+ *
+ * <p>Only a <strong>verified</strong> email is accepted as the account key. For OIDC we require
+ * {@code email_verified == true}; for OAuth2 (GitHub) whose userinfo carries no verification flag, we
+ * ignore the mutable {@code email} attribute and key on the provider-bound {@code login} (GitHub's
+ * stable noreply address). Without this, an attacker could set a victim's unverified email at a provider
+ * and take over the victim's account by JIT matching-by-email.
  */
 public class FederatedLoginSuccessHandler implements AuthenticationSuccessHandler {
 
-    private static final SimpleGrantedAuthority ROLE_USER = new SimpleGrantedAuthority("ROLE_USER");
+    private final FederatedSessionEstablisher establisher;
 
-    private final IdentityClient identityClient;
-    private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
-    private final SavedRequestAwareAuthenticationSuccessHandler delegate =
-            new SavedRequestAwareAuthenticationSuccessHandler();
-
-    public FederatedLoginSuccessHandler(IdentityClient identityClient) {
-        this.identityClient = identityClient;
-        this.delegate.setDefaultTargetUrl("/");
+    public FederatedLoginSuccessHandler(FederatedSessionEstablisher establisher) {
+        this.establisher = establisher;
     }
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
         if (!(authentication instanceof OAuth2AuthenticationToken oauthToken)) {
-            delegate.onAuthenticationSuccess(request, response, authentication);
             return;
         }
         String registrationId = oauthToken.getAuthorizedClientRegistrationId();
@@ -61,29 +44,9 @@ public class FederatedLoginSuccessHandler implements AuthenticationSuccessHandle
         String email = extractEmail(user);
         String username = extractUsername(user, email);
 
-        AegisUserPrincipal principal = identityClient.provisionFederated(tenant, email, username);
-
-        List<GrantedAuthority> authorities = List.of(ROLE_USER,
-                FactorGrantedAuthority.fromAuthority("FACTOR_FEDERATED"));
-        var aegisAuth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-
-        SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(aegisAuth);
-        SecurityContextHolder.setContext(context);
-        securityContextRepository.saveContext(context, request, response);
-
-        delegate.onAuthenticationSuccess(request, response, aegisAuth);
+        establisher.establish(tenant, email, username, request, response);
     }
 
-    /**
-     * Resolves the email used to link/provision — the account key — and only accepts an email the
-     * provider asserts as <strong>verified</strong>. Without this, an attacker could set a victim's
-     * (unverified) address at a social provider and take over the victim's Aegis account via JIT
-     * matching-by-email. For OIDC we require {@code email_verified == true}; for OAuth2 (GitHub) whose
-     * userinfo carries no verification flag, we ignore the mutable {@code email} attribute entirely and
-     * key on the provider-bound {@code login} (GitHub's stable noreply address), which cannot
-     * impersonate an arbitrary address.
-     */
     private static String extractEmail(OAuth2User user) {
         if (user instanceof OidcUser) {
             String email = user.getAttribute("email");

@@ -32,6 +32,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-client</artifactId>
         </dependency>
+        <!-- SAML 2.0 relying party (service provider), for corporate SAML federation (Phase 3).
+             Pulls OpenSAML from the Shibboleth repo (declared below); not on Maven Central. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-saml2-service-provider</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -89,6 +95,21 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <!-- OpenSAML (pulled in by spring-security-saml2-service-provider) is published to the Shibboleth
+         repository, not Maven Central. Scoped to this service — the only one doing SAML. -->
+    <repositories>
+        <repository>
+            <id>shibboleth-releases</id>
+            <url>https://build.shibboleth.net/maven/releases/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
 
     <build>
         <plugins>

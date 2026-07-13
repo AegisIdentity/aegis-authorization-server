@@ -29,7 +29,8 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 class FederatedLoginSuccessHandlerTest {
 
     private final IdentityClient identityClient = mock(IdentityClient.class);
-    private final FederatedLoginSuccessHandler handler = new FederatedLoginSuccessHandler(identityClient);
+    private final FederatedLoginSuccessHandler handler =
+            new FederatedLoginSuccessHandler(new FederatedSessionEstablisher(identityClient));
 
     @AfterEach
     void clear() {

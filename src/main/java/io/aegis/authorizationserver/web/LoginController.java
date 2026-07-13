@@ -41,10 +41,14 @@ public class LoginController {
         String tenant = tenantFromSavedRequest(request, response);
         if (tenant != null) {
             List<ProviderButton> providers = broker.listEnabled(tenant).stream()
-                    .map(p -> new ProviderButton(
-                            p.displayName(),
-                            p.providerKey(),
-                            "/oauth2/authorization/" + BrokerClientRegistrationRepository.registrationId(tenant, p.alias())))
+                    .map(p -> {
+                        String registrationId = BrokerClientRegistrationRepository.registrationId(tenant, p.alias());
+                        // SAML starts at /saml2/authenticate/{id}; OIDC/OAuth2 at /oauth2/authorization/{id}.
+                        String url = "SAML".equals(p.protocol())
+                                ? "/saml2/authenticate/" + registrationId
+                                : "/oauth2/authorization/" + registrationId;
+                        return new ProviderButton(p.displayName(), p.providerKey(), url);
+                    })
                     .toList();
             model.addAttribute("providers", providers);
         }

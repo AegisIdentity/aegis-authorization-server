@@ -3,6 +3,8 @@ package io.aegis.authorizationserver.config;
 import io.aegis.authorizationserver.auth.IdentityAuthenticationProvider;
 import io.aegis.authorizationserver.auth.TenantAuthenticationDetailsSource;
 import io.aegis.authorizationserver.federation.FederatedLoginSuccessHandler;
+import io.aegis.authorizationserver.federation.Saml2LoginSuccessHandler;
+import org.springframework.security.config.Customizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -26,7 +28,8 @@ public class DefaultSecurityConfig {
             HttpSecurity http,
             IdentityAuthenticationProvider identityAuthenticationProvider,
             TenantAuthenticationDetailsSource tenantAuthenticationDetailsSource,
-            FederatedLoginSuccessHandler federatedLoginSuccessHandler) throws Exception {
+            FederatedLoginSuccessHandler federatedLoginSuccessHandler,
+            Saml2LoginSuccessHandler saml2LoginSuccessHandler) throws Exception {
         http
                 .headers(headers -> headers
                         // Strict CSP, but deliberately WITHOUT `form-action`: this is an OAuth
@@ -54,7 +57,15 @@ public class DefaultSecurityConfig {
                 // before the authorize flow resumes.
                 .oauth2Login(oauth2 -> oauth2
                         .loginPage("/login")
-                        .successHandler(federatedLoginSuccessHandler));
+                        .successHandler(federatedLoginSuccessHandler))
+                // "Sign in with <SAML IdP>": per-tenant relying-party registrations resolved from the
+                // broker (BrokerRelyingPartyRegistrationRepository). On success the SAML assertion is
+                // mapped + JIT-provisioned like OIDC. saml2Metadata publishes the SP metadata at
+                // /saml2/service-provider-metadata/{registrationId} for registering with the IdP.
+                .saml2Login(saml2 -> saml2
+                        .loginPage("/login")
+                        .successHandler(saml2LoginSuccessHandler))
+                .saml2Metadata(Customizer.withDefaults());
         return http.build();
     }
 }
