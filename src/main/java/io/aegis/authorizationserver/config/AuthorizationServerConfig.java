@@ -158,8 +158,11 @@ public class AuthorizationServerConfig {
                 // (Broad for a dev console; production would gate these by the user's admin role.)
                 .scope("identity:users:read")
                 .scope("identity:users:write")
+                .scope("identity:groups:read")
+                .scope("identity:groups:write")
                 .scope("tenant:read")
                 .scope("tenant:admin")
+                .scope("applications:admin")
                 .clientSettings(ClientSettings.builder()
                         // First-party console: skip the consent screen for a smooth admin UX.
                         .requireAuthorizationConsent(false)

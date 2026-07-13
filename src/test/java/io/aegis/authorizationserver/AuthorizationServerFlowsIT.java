@@ -1,5 +1,6 @@
 package io.aegis.authorizationserver;
 
+import static io.aegis.commons.testing.AegisJwtTest.jwtForTenant;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -130,6 +131,29 @@ class AuthorizationServerFlowsIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").exists())
                 .andExpect(jsonPath("$.token_type").value("Bearer"));
+    }
+
+    @Test
+    void applications_api_lists_and_creates_clients_and_is_scope_gated() throws Exception {
+        // no token -> 401; wrong scope -> 403
+        mockMvc.perform(get("/api/v1/applications")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/applications")
+                        .with(jwtForTenant("t", "admin", "identity:users:read")))
+                .andExpect(status().isForbidden());
+
+        // correct scope: the list includes the seeded dev clients
+        mockMvc.perform(get("/api/v1/applications")
+                        .with(jwtForTenant("t", "admin", "applications:admin")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.clientId=='aegis-dev-spa')]").exists());
+
+        // create an OIDC application
+        mockMvc.perform(post("/api/v1/applications").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Acme Portal\",\"redirectUri\":\"https://acme.example/callback\"}")
+                        .with(jwtForTenant("t", "admin", "applications:admin")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Acme Portal"))
+                .andExpect(jsonPath("$.clientId").exists());
     }
 
     @Test
