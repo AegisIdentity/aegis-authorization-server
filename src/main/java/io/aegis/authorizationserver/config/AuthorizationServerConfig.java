@@ -115,6 +115,12 @@ public class AuthorizationServerConfig {
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri("http://127.0.0.1:8081/login/oauth2/code/aegis")
+                // aegis-admin-console (SPA) — the OIDC PKCE client for the console/portal.
+                // 5173 = Vite dev server; 3000 = the containerized nginx build in docker-compose.
+                .redirectUri("http://localhost:5173/callback")
+                .redirectUri("http://localhost:3000/callback")
+                .postLogoutRedirectUri("http://localhost:5173/signin")
+                .postLogoutRedirectUri("http://localhost:3000/signin")
                 .postLogoutRedirectUri("http://127.0.0.1:8081/")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
