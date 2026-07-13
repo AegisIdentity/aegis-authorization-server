@@ -34,6 +34,9 @@ class AuthorizationServerFlowsIT {
     @Autowired
     WebApplicationContext context;
 
+    @Autowired
+    org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository clients;
+
     MockMvc mockMvc;
 
     @BeforeEach
@@ -54,6 +57,19 @@ class AuthorizationServerFlowsIT {
                 .andExpect(jsonPath("$.jwks_uri").exists())
                 .andExpect(jsonPath("$.token_endpoint").exists())
                 .andExpect(jsonPath("$.authorization_endpoint").exists());
+    }
+
+    @Test
+    void spa_client_is_registered_with_the_console_scopes_and_redirect_uris() {
+        // Guards the "invalid_scope" sign-in failure: the console requests these scopes, so the
+        // aegis-dev-spa client must be registered for them (and for the console's redirect URIs).
+        var spa = clients.findByClientId("aegis-dev-spa");
+        org.assertj.core.api.Assertions.assertThat(spa).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(spa.getScopes())
+                .contains("openid", "profile", "identity:users:read", "identity:users:write",
+                        "tenant:read", "tenant:admin");
+        org.assertj.core.api.Assertions.assertThat(spa.getRedirectUris())
+                .contains("http://localhost:3000/callback", "http://localhost:5173/callback");
     }
 
     @Test

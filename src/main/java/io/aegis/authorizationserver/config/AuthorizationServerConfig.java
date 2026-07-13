@@ -117,26 +117,22 @@ public class AuthorizationServerConfig {
     }
 
     /**
-     * Seeds dev clients after the schema scripts have run (ApplicationRunner executes after the
-     * DataSource is initialized), which the repository-constructor path would race.
+     * Seeds/updates dev clients after the schema scripts have run (ApplicationRunner executes after
+     * the DataSource is initialized, which the repository-constructor path would race). The clients
+     * use <em>stable ids</em>, so {@code save} upserts by id — this keeps their config (scopes,
+     * redirect URIs) current across restarts even when the Postgres volume persists.
      */
     @Bean
     public org.springframework.boot.ApplicationRunner devClientSeeder(RegisteredClientRepository repository) {
         return args -> {
-            seedIfAbsent(repository, devSpaClient());
-            seedIfAbsent(repository, devMachineClient());
+            repository.save(devSpaClient());
+            repository.save(devMachineClient());
         };
-    }
-
-    private void seedIfAbsent(RegisteredClientRepository repository, RegisteredClient client) {
-        if (repository.findByClientId(client.getClientId()) == null) {
-            repository.save(client);
-        }
     }
 
     /** Public SPA / native client: authorization_code + PKCE, no client secret. */
     private RegisteredClient devSpaClient() {
-        return RegisteredClient.withId(UUID.randomUUID().toString())
+        return RegisteredClient.withId("aegis-dev-spa")
                 .clientId("aegis-dev-spa")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
@@ -152,8 +148,15 @@ public class AuthorizationServerConfig {
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
                 .scope("read")
+                // Scopes the admin console needs to call the management APIs on the admin's behalf.
+                // (Broad for a dev console; production would gate these by the user's admin role.)
+                .scope("identity:users:read")
+                .scope("identity:users:write")
+                .scope("tenant:read")
+                .scope("tenant:admin")
                 .clientSettings(ClientSettings.builder()
-                        .requireAuthorizationConsent(true)
+                        // First-party console: skip the consent screen for a smooth admin UX.
+                        .requireAuthorizationConsent(false)
                         .requireProofKey(true) // PKCE mandatory
                         .setting("tenant", "dev")
                         .build())
@@ -167,7 +170,7 @@ public class AuthorizationServerConfig {
 
     /** Confidential machine-to-machine client: client_credentials (host-to-host). */
     private RegisteredClient devMachineClient() {
-        return RegisteredClient.withId(UUID.randomUUID().toString())
+        return RegisteredClient.withId("aegis-dev-m2m")
                 .clientId("aegis-dev-m2m")
                 // {noop} for local dev only; production stores a hashed secret via a real encoder.
                 .clientSecret("{noop}dev-only-change-me")
