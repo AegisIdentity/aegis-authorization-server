@@ -1,10 +1,10 @@
 package io.aegis.authorizationserver.config;
 
-import io.aegis.commons.security.SecurityHardening;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -23,8 +23,20 @@ public class DefaultSecurityConfig {
     @Bean
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
-        SecurityHardening.applyHardeningHeaders(http);
         http
+                .headers(headers -> headers
+                        // Strict CSP, but deliberately WITHOUT `form-action`: this is an OAuth
+                        // authorization server, so the login POST legitimately redirects (via
+                        // /oauth2/authorize) to a client's redirect_uri on another origin. Chrome
+                        // enforces form-action across that redirect chain, so `form-action 'self'`
+                        // blocks the sign-in — that is the 403 at /login. The rest stays strict.
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"))
+                        .frameOptions(frame -> frame.deny())
+                        .referrerPolicy(ref -> ref.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                        .permissionsPolicyHeader(pp -> pp.policy(
+                                "geolocation=(), camera=(), microphone=()")))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/login", "/error", "/actuator/health",
                                 "/webjars/**", "/assets/**", "/favicon.ico").permitAll()

@@ -73,6 +73,17 @@ class AuthorizationServerFlowsIT {
     }
 
     @Test
+    void login_page_csp_does_not_restrict_form_action() throws Exception {
+        // Regression: an OAuth login POST redirects to the client redirect_uri (another origin), so
+        // `form-action 'self'` in the login CSP would make the browser block sign-in (403 at /login).
+        mockMvc.perform(get("/login"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Security-Policy", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("default-src 'self'"),
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("form-action")))));
+    }
+
+    @Test
     void discovery_allows_cors_from_the_spa_origin() throws Exception {
         // The browser SPA fetches discovery cross-origin before it can start sign-in; without this
         // header the fetch is blocked and sign-in silently never redirects.
