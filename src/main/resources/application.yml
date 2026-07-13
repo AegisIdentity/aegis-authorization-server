@@ -1,0 +1,43 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: aegis-authorization-server
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/aegis_authz}
+    username: ${POSTGRES_USER:aegis}
+    password: ${POSTGRES_PASSWORD:dev-only-change-me}
+  sql:
+    init:
+      mode: always
+      # Postgres-adapted copies of the schemas shipped in the Authorization Server jar (the shipped
+      # ones use H2/MySQL 'blob'; Postgres needs 'bytea'). Structure is otherwise unchanged — see
+      # db/postgresql/README for how they are derived.
+      schema-locations:
+        - classpath:db/postgresql/oauth2-authorization-schema.sql
+        - classpath:db/postgresql/oauth2-authorization-consent-schema.sql
+        - classpath:db/postgresql/oauth2-registered-client-schema.sql
+      continue-on-error: false
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+aegis:
+  # Single issuer for v1; per-tenant issuers (https://host/t/{tenantId}) are a documented enhancement.
+  issuer: ${AEGIS_ISSUER:http://localhost:9000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    org.springframework.security: INFO

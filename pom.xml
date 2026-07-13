@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.aegis</groupId>
+        <artifactId>aegis-platform-parent</artifactId>
+        <version>0.1.0</version>
+        <relativePath/>
+    </parent>
+
+    <artifactId>aegis-authorization-server</artifactId>
+    <version>0.1.0</version>
+    <name>Aegis Authorization Server</name>
+    <description>OIDC/OAuth2 provider: authorization_code+PKCE, client_credentials (M2M), refresh,
+        device. Interactive login host. The core token-issuing service.</description>
+
+    <properties>
+        <!-- Core service: enforce a real coverage floor. -->
+        <jacoco.line.coverage>0.60</jacoco.line.coverage>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-authorization-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Aegis shared hardening + tenant + error model -->
+        <dependency>
+            <groupId>io.aegis</groupId>
+            <artifactId>aegis-security-commons</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.aegis</groupId>
+            <artifactId>aegis-tenant-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.aegis</groupId>
+            <artifactId>aegis-web-commons</artifactId>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>io.aegis</groupId>
+            <artifactId>aegis-testing-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

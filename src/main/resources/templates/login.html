@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Sign in · Aegis</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #eef6ff; display: flex;
+               min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
+        .card { background: #fff; padding: 2rem 2.25rem; border-radius: 12px; width: 320px;
+                box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+        h1 { font-size: 1.25rem; margin: 0 0 1rem; color: #2f5b86; }
+        label { display: block; font-size: .8rem; color: #555; margin: .75rem 0 .25rem; }
+        input { width: 100%; padding: .55rem .6rem; border: 1px solid #cbd5e1; border-radius: 8px;
+                box-sizing: border-box; }
+        button { width: 100%; margin-top: 1.25rem; padding: .6rem; border: 0; border-radius: 8px;
+                 background: #2f5b86; color: #fff; font-weight: 600; cursor: pointer; }
+        .err { color: #b3261e; font-size: .8rem; margin-top: .75rem; }
+        .note { color: #94a3b8; font-size: .7rem; margin-top: 1rem; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Sign in to Aegis</h1>
+    <div class="err" th:if="${param.error}">Invalid username or password.</div>
+    <div class="err" th:if="${param.logout}" style="color:#4a7a3a">You have been signed out.</div>
+    <form th:action="@{/login}" method="post">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus/>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password"/>
+        <button type="submit">Sign in</button>
+    </form>
+    <p class="note">Reference login UI — replace with the branded, per-tenant experience.</p>
+</div>
+</body>
+</html>
