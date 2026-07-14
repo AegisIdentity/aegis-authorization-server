@@ -37,7 +37,7 @@
 
             <div class="alert err" th:if="${param.error}">Invalid username or password.</div>
             <div class="alert ok" th:if="${param.logout}">You have been signed out.</div>
-            <div class="alert err" id="passkey-error" style="display:none">Passkey sign-in failed. Try again or use your password.</div>
+            <div class="alert err" id="passkey-error" hidden>Passkey sign-in failed. Try again or use your password.</div>
 
             <button type="button" class="social" id="passkey-btn">🔑 Sign in with a passkey</button>
 

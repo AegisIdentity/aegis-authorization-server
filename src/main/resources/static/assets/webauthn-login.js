@@ -9,7 +9,8 @@
   var errEl = document.getElementById('passkey-error');
   if (!btn) return;
   // Hide the option in browsers without WebAuthn rather than offer something that can't work.
-  if (!window.PublicKeyCredential) { btn.style.display = 'none'; return; }
+  // Use the `hidden` property (not element.style) so nothing depends on the CSP allowing inline styles.
+  if (!window.PublicKeyCredential) { btn.hidden = true; return; }
 
   function b64urlToBuf(s) {
     s = s.replace(/-/g, '+').replace(/_/g, '/');
@@ -28,7 +29,7 @@
   }
 
   async function signIn() {
-    if (errEl) errEl.style.display = 'none';
+    if (errEl) errEl.hidden = true;
     btn.disabled = true;
     try {
       var tenantEl = document.getElementById('tenant');
@@ -71,7 +72,7 @@
       var out = await verRes.json();
       window.location.assign(out.redirect || '/');
     } catch (e) {
-      if (errEl) errEl.style.display = 'block';
+      if (errEl) errEl.hidden = false;
       btn.disabled = false;
     }
   }

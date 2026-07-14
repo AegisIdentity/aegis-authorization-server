@@ -41,23 +41,20 @@
             <div class="alert err" th:if="${error}">That code was not valid. Please try again.</div>
 
             <div th:if="${mode == 'ENROL'}" class="enrol">
-                <p class="note" style="text-align:left">
+                <p class="note note-left">
                     1. Open Google Authenticator, 1Password, Authy, or similar.<br/>
                     2. Add an account with this setup key:
                 </p>
-                <p class="secret" th:text="${secret}"
-                   style="font-family:monospace;font-size:16px;letter-spacing:2px;word-break:break-all;
-                          background:#f4f6fb;padding:10px 12px;border-radius:8px;text-align:center"></p>
-                <p class="note" style="text-align:left">
+                <p class="secret" th:text="${secret}"></p>
+                <p class="note note-left">
                     <a th:href="${otpauthUri}">Or tap here to add it automatically</a>, then enter the code below.
                 </p>
             </div>
 
             <form th:action="@{/mfa}" method="post">
                 <label for="code" th:text="${mode == 'ENROL'} ? 'Confirmation code' : 'Authentication code'">Code</label>
-                <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
-                       maxlength="6" placeholder="123456" autofocus
-                       style="letter-spacing:6px;text-align:center;font-size:20px"/>
+                <input type="text" id="code" name="code" class="code-input" inputmode="numeric"
+                       autocomplete="one-time-code" maxlength="6" placeholder="123456" autofocus/>
                 <button type="submit" th:text="${mode == 'ENROL'} ? 'Verify &amp; enable' : 'Verify'">Verify</button>
             </form>
 
