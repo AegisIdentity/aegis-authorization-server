@@ -37,6 +37,13 @@
 - **The login token must carry a `FactorGrantedAuthority`** (`IdentityAuthenticationProvider` grants
   `FACTOR_PASSWORD`). SAS derives the OIDC id_token `auth_time` from the latest factor's `issuedAt`;
   without a factor authority, id_token generation fails with "authenticationTime cannot be null".
+- **MFA step-up is enforced by `MfaPendingGateFilter` on the protocol chain (Order 1), NOT by the
+  success handler.** After the password factor, `MfaStepUp#arm` may set a session PENDING flag; the gate
+  blocks `/oauth2/authorize` (so no code/token is issued) until `/mfa` verifies the second factor. The
+  redirect from the login success handler is only UX — removing the gate would let a password-only
+  session obtain tokens by navigating straight to the authorize endpoint. Step-up MUST key on the token
+  `sub` (== `AegisUserPrincipal#getName()` == username), the same id self-service MFA stores factors
+  under, or enforcement silently no-ops. Covered by `MfaStepUpTest` + the e2e in scripts.
 
 ## Build / test
 `mvn verify` (needs Docker for Testcontainers Postgres). Coverage floor 0.60.
