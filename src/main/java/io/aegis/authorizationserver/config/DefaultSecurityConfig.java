@@ -48,8 +48,14 @@ public class DefaultSecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/login", "/login/theme.css", "/error", "/actuator/health",
                                 "/webjars/**", "/assets/**", "/favicon.ico").permitAll()
+                        // Passwordless passkey sign-in: pre-authentication ceremony endpoints.
+                        .requestMatchers("/login/webauthn/options", "/login/webauthn/verify").permitAll()
                         // /mfa is reachable only once the password factor has authenticated the session.
                         .anyRequest().authenticated())
+                // The passkey endpoints are pre-auth JSON and self-protecting: the assertion is signed by
+                // the authenticator over a single-use, server-issued challenge, so a forged cross-site POST
+                // cannot succeed. Exempt them from CSRF (which assumes an ambient authenticated session).
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/login/webauthn/**"))
                 .authenticationProvider(identityAuthenticationProvider)
                 .formLogin(form -> form
                         .loginPage("/login")

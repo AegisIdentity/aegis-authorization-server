@@ -104,10 +104,46 @@ public class MfaClient {
         }
     }
 
+    /** Passwordless login: fetch assertion options (challenge + rpId) for the browser's get() ceremony. */
+    public Map<String, Object> assertionOptions(String tenant) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> options = restClient.post()
+                .uri("/api/v1/mfa/internal/webauthn/assert/options")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("tenant", tenant == null ? "" : tenant))
+                .retrieve()
+                .body(Map.class);
+        if (options == null) {
+            throw new IllegalStateException("MFA service returned no assertion options");
+        }
+        return options;
+    }
+
+    /** Verify a passkey assertion. On success resolves the credential to its (tenant, subject). */
+    public AssertionResult verifyAssertion(Map<String, Object> assertion) {
+        try {
+            AssertionResult result = restClient.post()
+                    .uri("/api/v1/mfa/internal/webauthn/assert/verify")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken.token())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(assertion)
+                    .retrieve()
+                    .body(AssertionResult.class);
+            return result == null ? new AssertionResult(false, null, null) : result;
+        } catch (Exception ex) {
+            log.warn("Passkey assertion verify failed: {}", ex.toString());
+            return new AssertionResult(false, null, null);
+        }
+    }
+
     public record StepUpStatus(boolean enrolled, List<String> methods) {
     }
 
     public record Enrollment(String secret, String otpauthUri) {
+    }
+
+    public record AssertionResult(boolean valid, String tenant, String subject) {
     }
 
     private record ValidateResponse(boolean valid) {
