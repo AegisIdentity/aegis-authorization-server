@@ -22,6 +22,16 @@
   (`aegis-<tenant>`), so a token for tenant A can't be forged for B. Root path (no prefix) = default
   key, so the single-issuer console flow still works. Dev generates keys on demand; production wraps
   each in KMS and rotates with overlap, and must NOT regenerate on restart. See ARCHITECTURE.md §7.
+- **Aggregate JWKS + union decoder** (`web/JwksController` → `GET /internal/jwks`): the union of every
+  tenant's PUBLIC key. Resource servers point `AEGIS_JWKS_URI` here (root `/oauth2/jwks` has only the
+  default key, so per-tenant-key tokens would 401). The AS's own `jwtDecoder` bean likewise validates
+  with `TenantJwkSource#allKeys()` — outside the protocol chain there is no issuer context. Never wire
+  `allKeys()` into an ENCODER (a signer must select exactly its tenant's key).
+- **Tenant-app minted tokens are public-issuer, tenant-key signed** (`tenantapp/AegisTokenMinter`):
+  `iss = ${aegis.public-issuer-base}/{tenant}` (compose: the edge gateway host) and signed with that
+  tenant's key, so a tenant's backend validates them via standard OIDC discovery through the gateway
+  (`/{tenant}/.well-known/...`). The gateway reaches the AS with `preserveHostHeader`, which is what
+  makes gateway-host issuers come out of SAS discovery/token endpoints — see aegis-edge-gateway.
 - Every new client/grant change ships with a test (unregistered client rejected, wrong redirect_uri
   rejected — the common real-world misconfigs).
 - **Interactive-login principal must round-trip through the JDBC authorization store.** An

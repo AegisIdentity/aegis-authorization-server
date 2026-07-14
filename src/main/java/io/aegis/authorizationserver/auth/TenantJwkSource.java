@@ -46,8 +46,25 @@ public class TenantJwkSource implements JWKSource<SecurityContext> {
     public JWKSet currentTenantJwkSet() {
         AuthorizationServerContext asContext = AuthorizationServerContextHolder.getContext();
         String tenant = asContext != null ? tenantFromIssuer(asContext.getIssuer()) : null;
+        return jwkSetFor(tenant);
+    }
+
+    /** The JWKSet for an explicitly named tenant (generated on first use) — for flows that know their
+     * tenant out-of-band rather than from the request context, e.g. the tenant-app interaction-code
+     * minter, which runs outside the protocol chain where no issuer context is set. */
+    public JWKSet jwkSetFor(String tenant) {
         String key = (tenant == null || tenant.isBlank()) ? DEFAULT_TENANT : tenant;
         return keysByTenant.computeIfAbsent(key, TenantJwkSource::generateKeySet);
+    }
+
+    /** The union of every key generated so far (default + all tenants). For VALIDATION and the
+     * aggregate JWKS endpoint only — never wire this into a signer, which must select exactly its
+     * own tenant's key (see class javadoc for why the isolation matters). */
+    public JWKSet allKeys() {
+        List<JWK> keys = keysByTenant.values().stream()
+                .flatMap(set -> set.getKeys().stream())
+                .toList();
+        return new JWKSet(keys);
     }
 
     /** Extracts the tenant from an issuer like {@code http://host:port/acme} → {@code acme};

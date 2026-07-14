@@ -25,8 +25,12 @@ spring:
     open-in-view: false
 
 aegis:
-  # Single issuer for v1; per-tenant issuers (https://host/t/{tenantId}) are a documented enhancement.
+  # In-network issuer stamped on the AS's own service tokens (IdentityClient etc.).
   issuer: ${AEGIS_ISSUER:http://localhost:9000}
+  # Public base URL apps use to reach the platform — the edge gateway in a real deployment.
+  # Tenant-app tokens (interaction-code exchange) carry `iss = <public-issuer-base>/<tenant>`,
+  # so a tenant's own backend can validate them via standard OIDC discovery through the gateway.
+  public-issuer-base: ${AEGIS_PUBLIC_ISSUER_BASE:http://localhost:9000}
   # Login delegates credential verification to identity-service (the credential store).
   identity-service:
     base-url: ${IDENTITY_SERVICE_URL:http://localhost:9102}

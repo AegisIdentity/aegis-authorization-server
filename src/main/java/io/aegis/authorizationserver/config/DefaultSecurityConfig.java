@@ -49,6 +49,9 @@ public class DefaultSecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/login", "/login/theme.css", "/error", "/actuator/health",
                                 "/webjars/**", "/assets/**", "/favicon.ico", "/.well-known/**").permitAll()
+                        // Aggregate JWKS (public keys of every tenant) — fetched in-network by the
+                        // resource servers' split-horizon decoders. Public keys only.
+                        .requestMatchers("/internal/jwks").permitAll()
                         // Passwordless passkey sign-in: pre-authentication ceremony endpoints.
                         .requestMatchers("/login/webauthn/options", "/login/webauthn/verify").permitAll()
                         // /mfa is reachable only once the password factor has authenticated the session.

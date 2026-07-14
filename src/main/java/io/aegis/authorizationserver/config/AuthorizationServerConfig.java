@@ -312,9 +312,17 @@ public class AuthorizationServerConfig {
     // The JWKSource is io.aegis.authorizationserver.auth.TenantJwkSource (a @Component): it returns a
     // per-tenant key based on the current request's issuer, so tokens are signed with the tenant's key.
 
+    /**
+     * Validates bearer tokens on the AS's own endpoints (/userinfo, /api/v1/applications) with the
+     * <em>union</em> of all tenant keys: outside the protocol chain there is no issuer context, so a
+     * context-scoped JWKSource would only ever see the default key and per-tenant-key tokens (minted
+     * under a per-tenant issuer, e.g. through the gateway) would be rejected. Selection is by kid;
+     * signing is unaffected — encoders still use the context-scoped {@code TenantJwkSource}.
+     */
     @Bean
-    public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+    public JwtDecoder jwtDecoder(io.aegis.authorizationserver.auth.TenantJwkSource jwkSource) {
+        return OAuth2AuthorizationServerConfiguration.jwtDecoder(
+                (jwkSelector, context) -> jwkSelector.select(jwkSource.allKeys()));
     }
 
     @Bean
