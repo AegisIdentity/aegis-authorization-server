@@ -38,17 +38,27 @@ public class LoginController {
 
     @GetMapping("/login")
     public String login(HttpServletRequest request, HttpServletResponse response, Model model) {
-        String tenant = tenantFromSavedRequest(request, response);
+        SavedRequest saved = requestCache.getRequest(request, response);
+        String tenant = tenantFromSavedRequest(saved);
         if (tenant != null) {
-            List<ProviderButton> providers = broker.listEnabled(tenant).stream()
-                    .map(p -> {
-                        String registrationId = BrokerClientRegistrationRepository.registrationId(tenant, p.alias());
-                        // SAML starts at /saml2/authenticate/{id}; OIDC/OAuth2 at /oauth2/authorization/{id}.
-                        String url = "SAML".equals(p.protocol())
-                                ? "/saml2/authenticate/" + registrationId
-                                : "/oauth2/authorization/" + registrationId;
-                        return new ProviderButton(p.displayName(), p.providerKey(), url);
-                    })
+            var enabled = broker.listEnabled(tenant);
+            // idp_hint / connection: deep-link straight to one provider, skipping the chooser — so a
+            // tenant app's native "Continue with Google" lands directly on the provider. Add
+            // ?idp_hint=<alias|providerKey> to the /oauth2/authorize request.
+            String hint = firstParam(saved, "idp_hint");
+            if (hint == null) {
+                hint = firstParam(saved, "connection");
+            }
+            if (hint != null && !hint.isBlank()) {
+                for (var p : enabled) {
+                    if (hint.equalsIgnoreCase(p.alias()) || hint.equalsIgnoreCase(p.providerKey())) {
+                        return "redirect:" + providerStartUrl(tenant, p.alias(), p.protocol());
+                    }
+                }
+            }
+            List<ProviderButton> providers = enabled.stream()
+                    .map(p -> new ProviderButton(p.displayName(), p.providerKey(),
+                            providerStartUrl(tenant, p.alias(), p.protocol())))
                     .toList();
             model.addAttribute("providers", providers);
         }
@@ -59,8 +69,20 @@ public class LoginController {
         return "login";
     }
 
-    private String tenantFromSavedRequest(HttpServletRequest request, HttpServletResponse response) {
-        SavedRequest saved = requestCache.getRequest(request, response);
+    /** SAML starts at /saml2/authenticate/{id}; OIDC/OAuth2 at /oauth2/authorization/{id}. */
+    private static String providerStartUrl(String tenant, String alias, String protocol) {
+        String registrationId = BrokerClientRegistrationRepository.registrationId(tenant, alias);
+        return "SAML".equals(protocol)
+                ? "/saml2/authenticate/" + registrationId
+                : "/oauth2/authorization/" + registrationId;
+    }
+
+    private static String firstParam(SavedRequest saved, String name) {
+        String[] values = saved == null ? null : saved.getParameterValues(name);
+        return (values == null || values.length == 0) ? null : values[0];
+    }
+
+    private String tenantFromSavedRequest(SavedRequest saved) {
         if (saved == null) {
             return null;
         }

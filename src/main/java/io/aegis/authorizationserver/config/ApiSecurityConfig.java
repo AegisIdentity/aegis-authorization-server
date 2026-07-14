@@ -19,10 +19,12 @@ import org.springframework.security.web.SecurityFilterChain;
 public class ApiSecurityConfig {
 
     @Bean
-    @Order(Ordered.HIGHEST_PRECEDENCE)
+    @Order(Ordered.HIGHEST_PRECEDENCE + 10)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/api/**")
+                // Scoped to the applications admin API only (was /api/**), so the tenant-app OAuth surface
+                // (/api/v1/webauthn, /social, /oauth/interaction) can have its own permissive-CORS chain.
+                .securityMatcher("/api/v1/applications/**", "/api/v1/applications")
                 .authorizeHttpRequests(authorize -> authorize
                         .anyRequest().hasAuthority("SCOPE_applications:admin"))
                 .csrf(csrf -> csrf.disable())

@@ -104,6 +104,38 @@ public class MfaClient {
         }
     }
 
+    /** Tenant-app passkey registration: creation options using the tenant's own RP config. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> registerOptions(String tenant, String subject, String userName, String displayName) {
+        Map<String, Object> options = restClient.post()
+                .uri("/api/v1/mfa/internal/webauthn/register/options")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("tenant", tenant, "subject", subject,
+                        "userName", userName == null ? subject : userName,
+                        "displayName", displayName == null ? subject : displayName))
+                .retrieve()
+                .body(Map.class);
+        if (options == null) {
+            throw new IllegalStateException("MFA service returned no registration options");
+        }
+        return options;
+    }
+
+    /** Tenant-app passkey registration: verify + store the attestation against the tenant's RP config. */
+    public void registerFinish(String tenant, String subject, Map<String, Object> body) {
+        restClient.post()
+                .uri("/api/v1/mfa/internal/webauthn/register/finish")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + serviceToken.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(java.util.Map.of("tenant", tenant, "subject", subject,
+                        "attestationObject", body.getOrDefault("attestationObject", ""),
+                        "clientDataJSON", body.getOrDefault("clientDataJSON", ""),
+                        "label", body.getOrDefault("label", "Passkey")))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     /** Passwordless login: fetch assertion options (challenge + rpId) for the browser's get() ceremony. */
     public Map<String, Object> assertionOptions(String tenant) {
         @SuppressWarnings("unchecked")
