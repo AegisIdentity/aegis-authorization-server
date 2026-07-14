@@ -71,6 +71,12 @@ import org.springframework.http.MediaType;
 @Configuration(proxyBeanMethods = false)
 public class AuthorizationServerConfig {
 
+    /** Secret for the aegis-scim client_credentials client (dev default; override in production).
+     *  Must be distinct from other clients' secrets — SAS's JdbcRegisteredClientRepository enforces
+     *  secret uniqueness, so this cannot equal aegis-dev-m2m's {@code dev-only-change-me}. */
+    @org.springframework.beans.factory.annotation.Value("${aegis.scim-client-secret:scim-dev-only-change-me}")
+    private String scimClientSecret;
+
     /** Filter chain for the OAuth2/OIDC protocol endpoints. */
     @Bean
     @Order(1)
@@ -152,6 +158,7 @@ public class AuthorizationServerConfig {
         return args -> {
             repository.save(devSpaClient());
             repository.save(devMachineClient());
+            repository.save(scimServiceClient());
         };
     }
 
@@ -208,6 +215,25 @@ public class AuthorizationServerConfig {
                 .scope("identity:users:read")
                 .scope("tenant:read")
                 .clientSettings(ClientSettings.builder().setting("tenant", "dev").build())
+                .tokenSettings(TokenSettings.builder()
+                        .accessTokenTimeToLive(Duration.ofMinutes(5))
+                        .build())
+                .build();
+    }
+
+    /**
+     * SCIM provisioning service: confidential client_credentials client used by
+     * {@code aegis-scim-provisioning-service} to provision users into identity-service when an upstream
+     * IdP pushes them over SCIM. Secret is overridable via {@code AEGIS_SCIM_CLIENT_SECRET} (dev default).
+     */
+    private RegisteredClient scimServiceClient() {
+        return RegisteredClient.withId("aegis-scim")
+                .clientId("aegis-scim")
+                .clientSecret("{noop}" + scimClientSecret)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("identity:users:provision")
+                .scope("identity:users:write")
                 .tokenSettings(TokenSettings.builder()
                         .accessTokenTimeToLive(Duration.ofMinutes(5))
                         .build())
