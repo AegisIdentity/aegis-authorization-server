@@ -1,5 +1,6 @@
 package io.aegis.authorizationserver.auth;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 
@@ -8,6 +9,14 @@ import org.springframework.security.web.authentication.WebAuthenticationDetails;
 public class TenantWebAuthenticationDetails extends WebAuthenticationDetails {
 
     private final String tenant;
+
+    /**
+     * Transient hint carried from {@link IdentityAuthenticationProvider} (which learns it from
+     * identity-service's authenticate response) to the MFA step-up success handler, both within the same
+     * login POST. Deliberately {@link JsonIgnore}d: it is a login-time signal only, so it must never be
+     * persisted into the saved {@code OAuth2Authorization} — the stored details stay exactly as before.
+     */
+    private boolean mfaRequired;
 
     public TenantWebAuthenticationDetails(HttpServletRequest request) {
         super(request);
@@ -26,5 +35,15 @@ public class TenantWebAuthenticationDetails extends WebAuthenticationDetails {
 
     public String getTenant() {
         return tenant;
+    }
+
+    @JsonIgnore
+    public boolean isMfaRequired() {
+        return mfaRequired;
+    }
+
+    @JsonIgnore
+    public void setMfaRequired(boolean mfaRequired) {
+        this.mfaRequired = mfaRequired;
     }
 }

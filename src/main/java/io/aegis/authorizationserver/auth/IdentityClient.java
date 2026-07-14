@@ -30,8 +30,15 @@ public class IdentityClient {
         this.restClient = RestClient.builder().baseUrl(baseUrl).build();
     }
 
-    /** Returns the authenticated principal on success, or empty on any failure. */
-    public Optional<AegisUserPrincipal> authenticate(String tenantId, String username, String password) {
+    /**
+     * The result of a successful credential check: the principal plus whether the user's tenant
+     * requires MFA (so the login flow can decide on a step-up challenge before issuing tokens).
+     */
+    public record AuthOutcome(AegisUserPrincipal principal, boolean mfaRequired) {
+    }
+
+    /** Returns the authenticated outcome on success, or empty on any failure. */
+    public Optional<AuthOutcome> authenticate(String tenantId, String username, String password) {
         try {
             AuthResult result = restClient.post()
                     .uri("/api/v1/users:authenticate")
@@ -41,7 +48,8 @@ public class IdentityClient {
                     .retrieve()
                     .body(AuthResult.class);
             if (result != null && "SUCCESS".equals(result.outcome())) {
-                return Optional.of(new AegisUserPrincipal(tenantId, result.userId(), username));
+                return Optional.of(new AuthOutcome(
+                        new AegisUserPrincipal(tenantId, result.userId(), username), result.mfaRequired()));
             }
             log.warn("Login denied: identity-service outcome={} for org={} user={}",
                     result == null ? "null" : result.outcome(), tenantId, username);
@@ -76,7 +84,7 @@ public class IdentityClient {
         return new AegisUserPrincipal(tenantId, result.id(), result.username());
     }
 
-    private record AuthResult(String outcome, String userId) {
+    private record AuthResult(String outcome, String userId, boolean mfaRequired) {
     }
 
     private record ProvisionResult(String id, String tenantId, String username, String email, String status) {

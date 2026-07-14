@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 public class ServiceTokenProvider {
 
     private static final String SERVICE_SCOPES =
-            "identity:users:authenticate identity:users:provision idp:resolve";
+            "identity:users:authenticate identity:users:provision idp:resolve mfa:verify";
 
     private final JwtEncoder jwtEncoder;
     private final String issuer;

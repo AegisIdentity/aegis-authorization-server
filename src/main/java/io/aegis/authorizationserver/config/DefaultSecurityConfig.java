@@ -1,6 +1,8 @@
 package io.aegis.authorizationserver.config;
 
 import io.aegis.authorizationserver.auth.IdentityAuthenticationProvider;
+import io.aegis.authorizationserver.auth.MfaStepUp;
+import io.aegis.authorizationserver.auth.MfaStepUpAuthenticationSuccessHandler;
 import io.aegis.authorizationserver.auth.TenantAuthenticationDetailsSource;
 import io.aegis.authorizationserver.federation.FederatedLoginSuccessHandler;
 import io.aegis.authorizationserver.federation.Saml2LoginSuccessHandler;
@@ -29,7 +31,8 @@ public class DefaultSecurityConfig {
             IdentityAuthenticationProvider identityAuthenticationProvider,
             TenantAuthenticationDetailsSource tenantAuthenticationDetailsSource,
             FederatedLoginSuccessHandler federatedLoginSuccessHandler,
-            Saml2LoginSuccessHandler saml2LoginSuccessHandler) throws Exception {
+            Saml2LoginSuccessHandler saml2LoginSuccessHandler,
+            MfaStepUp mfaStepUp) throws Exception {
         http
                 .headers(headers -> headers
                         // Strict CSP, but deliberately WITHOUT `form-action`: this is an OAuth
@@ -45,11 +48,15 @@ public class DefaultSecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/login", "/login/theme.css", "/error", "/actuator/health",
                                 "/webjars/**", "/assets/**", "/favicon.ico").permitAll()
+                        // /mfa is reachable only once the password factor has authenticated the session.
                         .anyRequest().authenticated())
                 .authenticationProvider(identityAuthenticationProvider)
                 .formLogin(form -> form
                         .loginPage("/login")
                         .authenticationDetailsSource(tenantAuthenticationDetailsSource)
+                        // After the password factor, decide on a second-factor step-up: if needed, the
+                        // handler arms the pending state and routes to /mfa instead of resuming authorize.
+                        .successHandler(new MfaStepUpAuthenticationSuccessHandler(mfaStepUp))
                         .permitAll())
                 // "Sign in with <provider>": the tenant's registered social/OIDC providers. The client
                 // registration is resolved per-tenant from the broker (BrokerClientRegistrationRepository);

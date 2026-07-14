@@ -33,6 +33,9 @@ aegis:
   # Federated login resolves per-tenant provider config from the social-broker.
   social-broker:
     base-url: ${SOCIAL_BROKER_URL:http://localhost:9105}
+  # Step-up MFA (enrolment check + TOTP validate/enrol) is driven against the mfa-webauthn-service.
+  mfa-service:
+    base-url: ${MFA_SERVICE_URL:http://localhost:9103}
 
 management:
   endpoints:

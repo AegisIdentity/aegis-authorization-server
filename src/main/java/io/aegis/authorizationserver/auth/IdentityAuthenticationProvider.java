@@ -35,7 +35,7 @@ public class IdentityAuthenticationProvider implements AuthenticationProvider {
         if (tenant == null || tenant.isBlank()) {
             throw new BadCredentialsException("organization is required");
         }
-        AegisUserPrincipal principal = identityClient.authenticate(tenant, username, password)
+        IdentityClient.AuthOutcome outcome = identityClient.authenticate(tenant, username, password)
                 .orElseThrow(() -> new BadCredentialsException("invalid organization, username, or password"));
 
         // Grant ROLE_USER plus a PASSWORD authentication-factor authority. Spring Authorization Server
@@ -44,12 +44,18 @@ public class IdentityAuthenticationProvider implements AuthenticationProvider {
         // present — so a custom provider that authenticates by password must record that factor here.
         var authorities = List.of(ROLE_USER,
                 FactorGrantedAuthority.fromAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
-        var result = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        var result = new UsernamePasswordAuthenticationToken(outcome.principal(), null, authorities);
         // Carry the web details (remote address / session / tenant). This is persisted inside the saved
         // OAuth2Authorization, so TenantWebAuthenticationDetails is made JSON round-trippable (see its
         // reconstruction constructor + TenantWebAuthenticationDetailsMixin). Note: even if we left this
         // null, ProviderManager#copyDetails would re-attach the request's details onto the result.
-        result.setDetails(authentication.getDetails());
+        Object details = authentication.getDetails();
+        // Stamp the tenant's MFA requirement onto the (transient, JsonIgnore'd) details so the MFA
+        // step-up success handler can decide whether to challenge — without a second round-trip.
+        if (details instanceof TenantWebAuthenticationDetails tenantDetails) {
+            tenantDetails.setMfaRequired(outcome.mfaRequired());
+        }
+        result.setDetails(details);
         return result;
     }
 

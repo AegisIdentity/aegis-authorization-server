@@ -74,7 +74,8 @@ public class AuthorizationServerConfig {
     /** Filter chain for the OAuth2/OIDC protocol endpoints. */
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain authorizationServerSecurityFilterChain(
+            HttpSecurity http, io.aegis.authorizationserver.auth.MfaStepUp mfaStepUp) throws Exception {
         // Spring Security 7.1: apply the configurer via HttpSecurity.with(...). The supporting beans
         // (RegisteredClientRepository, OAuth2AuthorizationService, AuthorizationServerSettings,
         // JWKSource, OAuth2TokenCustomizer) are resolved from the context automatically.
@@ -83,6 +84,11 @@ public class AuthorizationServerConfig {
 
         http
                 .securityMatcher(endpointsMatcher)
+                // Enforce MFA step-up: while a second factor is pending in the session, block the
+                // authorization endpoint (no code is issued until MFA completes). This is the security
+                // boundary — a password-only session cannot obtain tokens by navigating to /oauth2/authorize.
+                .addFilterAfter(new io.aegis.authorizationserver.auth.MfaPendingGateFilter(mfaStepUp),
+                        org.springframework.security.web.context.SecurityContextHolderFilter.class)
                 // Allow the SPA (console/portal) to fetch discovery/JWKS and do the PKCE token
                 // exchange cross-origin. Without this, oidc-client-ts's metadata fetch is CORS-blocked
                 // and sign-in silently never redirects.

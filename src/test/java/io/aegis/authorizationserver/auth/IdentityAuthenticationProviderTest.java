@@ -32,7 +32,8 @@ class IdentityAuthenticationProviderTest {
     @Test
     void authenticates_and_carries_the_users_tenant() {
         when(identityClient.authenticate("acme", "alice", "pw"))
-                .thenReturn(Optional.of(new AegisUserPrincipal("acme", "u-1", "alice")));
+                .thenReturn(Optional.of(new IdentityClient.AuthOutcome(
+                        new AegisUserPrincipal("acme", "u-1", "alice"), true)));
 
         Authentication result = provider.authenticate(loginAttempt("acme", "alice", "pw"));
 
@@ -46,6 +47,8 @@ class IdentityAuthenticationProviderTest {
         assertThat(result.getAuthorities()).anyMatch(a ->
                 org.springframework.security.core.authority.FactorGrantedAuthority.PASSWORD_AUTHORITY
                         .equals(a.getAuthority()));
+        // The tenant's MFA requirement is stamped onto the (transient) details for the step-up handler.
+        assertThat(((TenantWebAuthenticationDetails) result.getDetails()).isMfaRequired()).isTrue();
     }
 
     @Test
