@@ -75,7 +75,8 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(
-            HttpSecurity http, io.aegis.authorizationserver.auth.MfaStepUp mfaStepUp) throws Exception {
+            HttpSecurity http, io.aegis.authorizationserver.auth.MfaStepUp mfaStepUp,
+            org.springframework.security.web.savedrequest.RequestCache authorizeRequestCache) throws Exception {
         // Spring Security 7.1: apply the configurer via HttpSecurity.with(...). The supporting beans
         // (RegisteredClientRepository, OAuth2AuthorizationService, AuthorizationServerSettings,
         // JWKSource, OAuth2TokenCustomizer) are resolved from the context automatically.
@@ -103,7 +104,9 @@ public class AuthorizationServerConfig {
                                 new LoginUrlAuthenticationEntryPoint("/login"),
                                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
                 // Accept our own tokens on protocol endpoints that require them (e.g. userinfo).
-                .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()))
+                // Save only the authorize request for post-login resume (see DefaultSecurityConfig).
+                .requestCache(rc -> rc.requestCache(authorizeRequestCache));
         return http.build();
     }
 

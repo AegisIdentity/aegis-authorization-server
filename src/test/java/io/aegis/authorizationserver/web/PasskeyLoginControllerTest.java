@@ -23,7 +23,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class PasskeyLoginControllerTest {
 
     private final MfaClient mfaClient = mock(MfaClient.class);
-    private final PasskeyLoginController controller = new PasskeyLoginController(mfaClient);
+    private final PasskeyLoginController controller = new PasskeyLoginController(
+            mfaClient,
+            new org.springframework.security.web.savedrequest.HttpSessionRequestCache(),
+            "http://localhost:3000");
 
     @AfterEach
     void clear() {

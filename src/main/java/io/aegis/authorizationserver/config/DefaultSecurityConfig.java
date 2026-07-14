@@ -32,7 +32,8 @@ public class DefaultSecurityConfig {
             TenantAuthenticationDetailsSource tenantAuthenticationDetailsSource,
             FederatedLoginSuccessHandler federatedLoginSuccessHandler,
             Saml2LoginSuccessHandler saml2LoginSuccessHandler,
-            MfaStepUp mfaStepUp) throws Exception {
+            MfaStepUp mfaStepUp,
+            org.springframework.security.web.savedrequest.RequestCache authorizeRequestCache) throws Exception {
         http
                 .headers(headers -> headers
                         // Strict CSP, but deliberately WITHOUT `form-action`: this is an OAuth
@@ -47,11 +48,16 @@ public class DefaultSecurityConfig {
                                 "geolocation=(), camera=(), microphone=()")))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/login", "/login/theme.css", "/error", "/actuator/health",
-                                "/webjars/**", "/assets/**", "/favicon.ico").permitAll()
+                                "/webjars/**", "/assets/**", "/favicon.ico", "/.well-known/**").permitAll()
                         // Passwordless passkey sign-in: pre-authentication ceremony endpoints.
                         .requestMatchers("/login/webauthn/options", "/login/webauthn/verify").permitAll()
                         // /mfa is reachable only once the password factor has authenticated the session.
                         .anyRequest().authenticated())
+                // Only ever save the authorization request for post-login resume. Without this, browser
+                // probe requests (favicon, /.well-known/appspecific/com.chrome.devtools.json, …) that hit a
+                // protected path get cached as "the saved request" and are replayed after login — landing
+                // the user on a 404 instead of resuming /oauth2/authorize.
+                .requestCache(rc -> rc.requestCache(authorizeRequestCache))
                 // The passkey endpoints are pre-auth JSON and self-protecting: the assertion is signed by
                 // the authenticator over a single-use, server-issued challenge, so a forged cross-site POST
                 // cannot succeed. Exempt them from CSRF (which assumes an ambient authenticated session).
@@ -80,5 +86,18 @@ public class DefaultSecurityConfig {
                         .successHandler(saml2LoginSuccessHandler))
                 .saml2Metadata(Customizer.withDefaults());
         return http.build();
+    }
+
+    /**
+     * A request cache that only ever saves the OAuth2 authorization request, so the post-login resume
+     * (both the built-in success handlers and the passkey/MFA controllers) always lands back on
+     * {@code /oauth2/authorize} — never on an unrelated browser probe that happened to hit a protected
+     * path first. Shared by both security filter chains.
+     */
+    @Bean
+    public org.springframework.security.web.savedrequest.RequestCache authorizeRequestCache() {
+        var cache = new org.springframework.security.web.savedrequest.HttpSessionRequestCache();
+        cache.setRequestMatcher(request -> request.getRequestURI().contains("/oauth2/authorize"));
+        return cache;
     }
 }

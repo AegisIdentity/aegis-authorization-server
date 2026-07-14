@@ -15,7 +15,6 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.savedrequest.SavedRequest;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,11 +35,16 @@ public class PasskeyLoginController {
     private static final SimpleGrantedAuthority ROLE_USER = new SimpleGrantedAuthority("ROLE_USER");
 
     private final MfaClient mfaClient;
+    private final RequestCache requestCache;
+    private final String consoleUrl;
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
-    private final RequestCache requestCache = new HttpSessionRequestCache();
 
-    public PasskeyLoginController(MfaClient mfaClient) {
+    public PasskeyLoginController(MfaClient mfaClient, RequestCache authorizeRequestCache,
+                                 @org.springframework.beans.factory.annotation.Value(
+                                         "${aegis.console-url:http://localhost:3000}") String consoleUrl) {
         this.mfaClient = mfaClient;
+        this.requestCache = authorizeRequestCache;
+        this.consoleUrl = consoleUrl;
     }
 
     /** Start the ceremony: a challenge + rpId for {@code navigator.credentials.get()}. */
@@ -70,8 +74,10 @@ public class PasskeyLoginController {
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
 
+        // Resume the original authorize request; if there is none (e.g. passkey clicked at a bare /login),
+        // send the user to the console rather than a dead authorization-server root.
         SavedRequest saved = requestCache.getRequest(request, response);
-        String redirect = saved != null ? saved.getRedirectUrl() : "/";
+        String redirect = saved != null ? saved.getRedirectUrl() : consoleUrl;
         return ResponseEntity.ok(Map.of("redirect", redirect));
     }
 }
