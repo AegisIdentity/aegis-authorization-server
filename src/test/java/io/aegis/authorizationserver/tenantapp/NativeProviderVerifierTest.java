@@ -19,8 +19,19 @@ class NativeProviderVerifierTest {
     }
 
     @Test
+    void a_provider_without_a_configured_client_id_is_refused_fail_closed() {
+        // Without a client id there is no audience to check, so a token for ANY app would otherwise pass.
+        BrokerClient.ProviderConfig provider = mock(BrokerClient.ProviderConfig.class);
+        when(provider.clientId()).thenReturn(null);
+        assertThatThrownBy(() -> verifier.verify(provider, "some.id.token"))
+                .isInstanceOf(NativeProviderVerifier.NativeVerificationException.class)
+                .hasMessageContaining("client id");
+    }
+
+    @Test
     void a_provider_without_jwks_or_issuer_cannot_verify() {
         BrokerClient.ProviderConfig provider = mock(BrokerClient.ProviderConfig.class);
+        when(provider.clientId()).thenReturn("acme-client");
         when(provider.jwkSetUri()).thenReturn(null);
         when(provider.issuerUri()).thenReturn(null);
         assertThatThrownBy(() -> verifier.verify(provider, "some.id.token"))
@@ -30,6 +41,7 @@ class NativeProviderVerifierTest {
     @Test
     void an_unverifiable_token_is_rejected() {
         BrokerClient.ProviderConfig provider = mock(BrokerClient.ProviderConfig.class);
+        when(provider.clientId()).thenReturn("acme-client");
         when(provider.jwkSetUri()).thenReturn("http://127.0.0.1:1/jwks"); // unreachable
         when(provider.issuerUri()).thenReturn("https://accounts.example.com");
         assertThatThrownBy(() -> verifier.verify(provider, "not-a-real-jwt"))

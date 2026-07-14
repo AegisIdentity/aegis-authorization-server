@@ -39,17 +39,31 @@ public class NativeProviderVerifier {
         if (provider == null) {
             throw new NativeVerificationException("unknown provider");
         }
+        // Fail closed: without a configured client id there is no audience to validate the id_token
+        // against, so a token minted for any app would otherwise be accepted. Refuse up front.
+        if (provider.clientId() == null || provider.clientId().isBlank()) {
+            throw new NativeVerificationException(
+                    "provider is not configured with a client id; id_token audience cannot be validated");
+        }
         Jwt jwt;
         try {
             jwt = decoderFor(provider).decode(idToken);
         } catch (Exception ex) {
             throw new NativeVerificationException("id_token verification failed: " + ex.getMessage());
         }
-        // Audience must include the provider client_id the tenant configured — stops a token minted for a
-        // different app from being replayed here.
+        // Audience MUST equal the provider client_id the tenant configured — this is what stops an
+        // id_token minted for a *different* app from being replayed here to impersonate its subject.
         List<String> aud = jwt.getAudience();
-        if (provider.clientId() != null && (aud == null || !aud.contains(provider.clientId()))) {
+        if (aud == null || !aud.contains(provider.clientId())) {
             throw new NativeVerificationException("id_token audience does not match the configured provider client");
+        }
+        // OIDC Core 3.1.3.7: when the id_token has more than one audience, the authorized party (azp)
+        // MUST be present and MUST be our client id.
+        if (aud.size() > 1) {
+            String azp = jwt.getClaimAsString("azp");
+            if (azp == null || !azp.equals(provider.clientId())) {
+                throw new NativeVerificationException("id_token azp does not match the configured provider client");
+            }
         }
         Object verified = jwt.getClaim("email_verified");
         String email = jwt.getClaimAsString("email");
