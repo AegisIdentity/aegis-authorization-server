@@ -34,6 +34,14 @@ public class MfaStepUp {
     static final String ACCOUNT = "AEGIS_MFA_ACCOUNT";
     static final String ENROL_SECRET = "AEGIS_MFA_ENROL_SECRET";
     static final String ENROL_URI = "AEGIS_MFA_ENROL_URI";
+    static final String ATTEMPTS = "AEGIS_MFA_ATTEMPTS";
+
+    /**
+     * Maximum failed second-factor attempts allowed per pending step-up before the pending state is
+     * invalidated and the user must re-authenticate (M-core-4). Bounds online TOTP guessing where 3
+     * codes are valid at any instant within the skew window.
+     */
+    public static final int MAX_ATTEMPTS = 5;
 
     private final MfaClient mfaClient;
 
@@ -114,9 +122,22 @@ public class MfaStepUp {
         };
     }
 
-    /** Clear all step-up state — called once the second factor has verified. */
+    /**
+     * Record a failed second-factor attempt for the pending step-up and report whether the per-step-up
+     * attempt cap ({@link #MAX_ATTEMPTS}) has now been reached (M-core-4). The caller must, on a
+     * {@code true} return, invalidate the pending state and force a full re-authentication.
+     */
+    public boolean recordFailedAttempt(HttpSession session) {
+        Object current = session.getAttribute(ATTEMPTS);
+        int attempts = (current instanceof Integer i ? i : 0) + 1;
+        session.setAttribute(ATTEMPTS, attempts);
+        return attempts >= MAX_ATTEMPTS;
+    }
+
+    /** Clear all step-up state — called once the second factor has verified (or the cap is hit). */
     public void clear(HttpSession session) {
-        for (String key : new String[] {PENDING, MODE, TENANT, SUBJECT, ACCOUNT, ENROL_SECRET, ENROL_URI}) {
+        for (String key : new String[] {PENDING, MODE, TENANT, SUBJECT, ACCOUNT, ENROL_SECRET, ENROL_URI,
+                ATTEMPTS}) {
             session.removeAttribute(key);
         }
     }

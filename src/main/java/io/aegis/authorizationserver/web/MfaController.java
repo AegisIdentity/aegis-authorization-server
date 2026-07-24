@@ -62,6 +62,14 @@ public class MfaController {
             return "redirect:/login";
         }
         if (!stepUp.verify(session, code.trim())) {
+            // M-core-4: cap failed step-up attempts. On exceeding the cap, invalidate the pending
+            // step-up and the whole session so a password-only session can't keep guessing TOTP codes —
+            // the user must start over and re-authenticate.
+            if (stepUp.recordFailedAttempt(session)) {
+                stepUp.clear(session);
+                session.invalidate();
+                return "redirect:/login?error";
+            }
             return "redirect:/mfa?error";
         }
         // Second factor verified: drop the gate and resume the original authorize request.

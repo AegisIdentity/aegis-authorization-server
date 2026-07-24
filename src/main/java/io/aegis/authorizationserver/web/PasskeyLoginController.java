@@ -69,6 +69,12 @@ public class PasskeyLoginController {
                 FactorGrantedAuthority.fromAuthority("FACTOR_WEBAUTHN"));
         var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
 
+        // M-core-3: prevent session fixation. Rotate the session id at the point of authentication so a
+        // pre-login (possibly attacker-fixed) session id cannot be reused as an authenticated session.
+        if (request.getSession(false) != null) {
+            request.changeSessionId();
+        }
+
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(auth);
         SecurityContextHolder.setContext(context);

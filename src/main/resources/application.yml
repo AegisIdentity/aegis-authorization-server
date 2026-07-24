@@ -1,5 +1,14 @@
 server:
   port: 9000
+  servlet:
+    session:
+      cookie:
+        # L-core-2: the AS is the stateful login host — harden its session cookie.
+        # HttpOnly + SameSite are always safe; Secure is forced on by default and relaxed only under
+        # the dev profile (see application-dev.yml) where login runs over plain http://localhost.
+        http-only: true
+        same-site: lax
+        secure: true
 
 spring:
   application:
@@ -7,7 +16,9 @@ spring:
   datasource:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/aegis_authz}
     username: ${POSTGRES_USER:aegis}
-    password: ${POSTGRES_PASSWORD:dev-only-change-me}
+    # M-core-6: no inline secret default — startup fails fast if POSTGRES_PASSWORD is unset outside the
+    # dev profile (the dev profile supplies a dev-only fallback in application-dev.yml).
+    password: ${POSTGRES_PASSWORD}
   sql:
     init:
       mode: always

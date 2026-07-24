@@ -52,10 +52,14 @@ public class TenantAppSecurityConfig {
 
     private CorsConfigurationSource tenantAppCorsSource() {
         CorsConfiguration config = new CorsConfiguration();
+        // L-core-5 INVARIANT: wildcard origins are acceptable here ONLY because credentials are off
+        // (allowCredentials=false, below). These endpoints authenticate via bearer token / interaction
+        // code, never ambient cookies, so a wildcard origin cannot be abused to ride a user's session.
+        // If allowCredentials is ever set to true, this wildcard MUST be replaced with an allowlist.
         config.setAllowedOriginPatterns(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(false); // no cookies — bearer/code only
+        config.setAllowCredentials(false); // no cookies — bearer/code only (see L-core-5 invariant above)
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         for (String path : PATHS) {

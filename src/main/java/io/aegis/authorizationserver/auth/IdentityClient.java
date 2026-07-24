@@ -51,18 +51,41 @@ public class IdentityClient {
                 return Optional.of(new AuthOutcome(
                         new AegisUserPrincipal(tenantId, result.userId(), username), result.mfaRequired()));
             }
+            // L-core-6: never log raw username/org (low-grade PII, and users sometimes type a password
+            // into the username field). Log a stable one-way hash so failures can still be correlated.
             log.warn("Login denied: identity-service outcome={} for org={} user={}",
-                    result == null ? "null" : result.outcome(), tenantId, username);
+                    result == null ? "null" : result.outcome(), redact(tenantId), redact(username));
         } catch (RestClientResponseException ex) {
             log.warn("Login could not be verified: identity-service returned HTTP {} for org={} user={}. "
                     + "A 401 here usually means the AS→identity service token was rejected — restart "
                     + "identity-service so it re-fetches the AS JWKS. Body: {}",
-                    ex.getStatusCode(), tenantId, username, ex.getResponseBodyAsString());
+                    ex.getStatusCode(), redact(tenantId), redact(username), ex.getResponseBodyAsString());
         } catch (Exception ex) {
             log.warn("Login could not be verified: identity-service unreachable for org={} user={}: {}",
-                    tenantId, username, ex.toString());
+                    redact(tenantId), redact(username), ex.toString());
         }
         return Optional.empty();
+    }
+
+    /**
+     * One-way redaction for log lines: returns a short salted-free SHA-256 prefix so an operator can
+     * correlate repeated failures for the same value without the raw username/org (PII) reaching logs.
+     */
+    private static String redact(String value) {
+        if (value == null || value.isBlank()) {
+            return "<none>";
+        }
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < 4; i++) {
+                hex.append(String.format("%02x", digest[i]));
+            }
+            return "sha256:" + hex;
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return "<redacted>";
+        }
     }
 
     /**

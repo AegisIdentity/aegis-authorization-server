@@ -29,6 +29,7 @@ import org.springframework.web.context.WebApplicationContext;
  * {@code springSecurity()} wires the security filter chain into the MockMvc pipeline.
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("dev") // seed dev clients (devClientSeeder is @Profile("dev"))
 @Import(TestcontainersConfig.class)
 class AuthorizationServerFlowsIT {
 

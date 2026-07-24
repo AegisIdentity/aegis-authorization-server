@@ -71,12 +71,6 @@ import org.springframework.http.MediaType;
 @Configuration(proxyBeanMethods = false)
 public class AuthorizationServerConfig {
 
-    /** Secret for the aegis-scim client_credentials client (dev default; override in production).
-     *  Must be distinct from other clients' secrets — SAS's JdbcRegisteredClientRepository enforces
-     *  secret uniqueness, so this cannot equal aegis-dev-m2m's {@code dev-only-change-me}. */
-    @org.springframework.beans.factory.annotation.Value("${aegis.scim-client-secret:scim-dev-only-change-me}")
-    private String scimClientSecret;
-
     /** Filter chain for the OAuth2/OIDC protocol endpoints. */
     @Bean
     @Order(1)
@@ -152,13 +146,23 @@ public class AuthorizationServerConfig {
      * the DataSource is initialized, which the repository-constructor path would race). The clients
      * use <em>stable ids</em>, so {@code save} upserts by id — this keeps their config (scopes,
      * redirect URIs) current across restarts even when the Postgres volume persists.
+     *
+     * <p><b>Security (H1):</b> this seeder is {@code @Profile("dev")} — it NEVER runs outside the dev
+     * profile, so no known/default client secret is ever provisioned into stage/prod. The M2M and SCIM
+     * client secrets are read from configuration with <em>no inline default</em> (dev values live in
+     * {@code application-dev.yml}); nothing is hardcoded in source. Because the whole seeder is
+     * dev-only, the secret placeholders are resolved only under the dev profile.
      */
     @Bean
-    public org.springframework.boot.ApplicationRunner devClientSeeder(RegisteredClientRepository repository) {
+    @org.springframework.context.annotation.Profile("dev")
+    public org.springframework.boot.ApplicationRunner devClientSeeder(
+            RegisteredClientRepository repository,
+            @Value("${aegis.m2m-client-secret}") String m2mClientSecret,
+            @Value("${aegis.scim-client-secret}") String scimClientSecret) {
         return args -> {
             repository.save(devSpaClient());
-            repository.save(devMachineClient());
-            repository.save(scimServiceClient());
+            repository.save(devMachineClient(m2mClientSecret));
+            repository.save(scimServiceClient(scimClientSecret));
         };
     }
 
@@ -182,6 +186,10 @@ public class AuthorizationServerConfig {
                 .scope("read")
                 // Scopes the admin console needs to call the management APIs on the admin's behalf.
                 // (Broad for a dev console; production would gate these by the user's admin role.)
+                // L-core-4 / TODO(prod): this client is seeded ONLY under the dev profile. Before any
+                // stage/prod use, scope issuance MUST be gated on the authenticated user's admin role
+                // (e.g. via a token customizer / consent) rather than granting every console user the
+                // full identity:*/tenant:admin/applications:admin/idp:admin set unconditionally.
                 .scope("identity:users:read")
                 .scope("identity:users:write")
                 .scope("identity:groups:read")
@@ -205,11 +213,13 @@ public class AuthorizationServerConfig {
     }
 
     /** Confidential machine-to-machine client: client_credentials (host-to-host). */
-    private RegisteredClient devMachineClient() {
+    private RegisteredClient devMachineClient(String m2mClientSecret) {
         return RegisteredClient.withId("aegis-dev-m2m")
                 .clientId("aegis-dev-m2m")
-                // {noop} for local dev only; production stores a hashed secret via a real encoder.
-                .clientSecret("{noop}dev-only-change-me")
+                // Secret comes from configuration (dev-only, via application-dev.yml) — never hardcoded.
+                // {noop} is acceptable only because this client is seeded exclusively under the dev
+                // profile; production stores a hashed secret via a real encoder.
+                .clientSecret("{noop}" + m2mClientSecret)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .scope("identity:users:read")
@@ -224,9 +234,11 @@ public class AuthorizationServerConfig {
     /**
      * SCIM provisioning service: confidential client_credentials client used by
      * {@code aegis-scim-provisioning-service} to provision users into identity-service when an upstream
-     * IdP pushes them over SCIM. Secret is overridable via {@code AEGIS_SCIM_CLIENT_SECRET} (dev default).
+     * IdP pushes them over SCIM. Secret is read from configuration (dev-only, via application-dev.yml)
+     * and overridable via {@code AEGIS_SCIM_CLIENT_SECRET}; it is never hardcoded in source. Must be
+     * distinct from aegis-dev-m2m's secret — SAS's JdbcRegisteredClientRepository enforces uniqueness.
      */
-    private RegisteredClient scimServiceClient() {
+    private RegisteredClient scimServiceClient(String scimClientSecret) {
         return RegisteredClient.withId("aegis-scim")
                 .clientId("aegis-scim")
                 .clientSecret("{noop}" + scimClientSecret)

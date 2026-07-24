@@ -1,0 +1,20 @@
+# Dev-profile overrides. Activate with SPRING_PROFILES_ACTIVE=dev (local dev, docker-compose, tests).
+# These values apply ONLY under the dev profile and are never loaded in stage/prod, so the known dev
+# credentials here can never ship to a real deployment (H1/H2/M-core-6).
+server:
+  servlet:
+    session:
+      cookie:
+        # Dev login runs over plain http://localhost, where a Secure cookie would never be sent.
+        secure: false
+
+spring:
+  datasource:
+    # Dev-only fallback so a bare `mvn`/local run works without exporting POSTGRES_PASSWORD.
+    password: ${POSTGRES_PASSWORD:dev-only-change-me}
+
+aegis:
+  # Dev-only client secrets consumed exclusively by the (dev-profile-gated) devClientSeeder (H1).
+  # Overridable via env; never present outside the dev profile.
+  m2m-client-secret: ${AEGIS_M2M_CLIENT_SECRET:dev-only-change-me}
+  scim-client-secret: ${AEGIS_SCIM_CLIENT_SECRET:scim-dev-only-change-me}

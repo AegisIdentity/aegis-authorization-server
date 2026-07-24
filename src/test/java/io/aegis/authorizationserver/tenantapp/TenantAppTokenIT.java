@@ -28,6 +28,7 @@ import org.springframework.web.context.WebApplicationContext;
  * or a real social provider.
  */
 @SpringBootTest
+@org.springframework.test.context.ActiveProfiles("dev") // seed dev clients (devClientSeeder is @Profile("dev"))
 @Import(TestcontainersConfig.class)
 class TenantAppTokenIT {
 
