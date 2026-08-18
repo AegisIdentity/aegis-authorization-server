@@ -37,10 +37,12 @@ public class TenantAppAuthController {
     private final NativeProviderVerifier providerVerifier;
     private final InteractionCodeStore interactions;
     private final AegisTokenMinter tokenMinter;
+    private final io.aegis.commons.audit.AuditRecorder audit;
 
     public TenantAppAuthController(RegisteredClientRepository clients, MfaClient mfaClient, BrokerClient broker,
                                   IdentityClient identityClient, NativeProviderVerifier providerVerifier,
-                                  InteractionCodeStore interactions, AegisTokenMinter tokenMinter) {
+                                  InteractionCodeStore interactions, AegisTokenMinter tokenMinter,
+                                  io.aegis.commons.audit.AuditRecorder audit) {
         this.clients = clients;
         this.mfaClient = mfaClient;
         this.broker = broker;
@@ -48,6 +50,7 @@ public class TenantAppAuthController {
         this.providerVerifier = providerVerifier;
         this.interactions = interactions;
         this.tokenMinter = tokenMinter;
+        this.audit = audit;
     }
 
     // --- Passkey enrolment (signed-in user; passkey bound to the tenant's own rpId) ---
@@ -116,6 +119,8 @@ public class TenantAppAuthController {
         InteractionCodeStore.Transaction txn = interactions.consume(
                 str(body, "interaction_code"), clientId, str(body, "code_verifier"));
         AegisTokenMinter.Tokens t = tokenMinter.mint(txn.tenant(), txn.subject(), clientId, txn.amr());
+        // Token issuance is a core auth event — stream it to the platform trail (no token in the record).
+        audit.record("auth", "auth.token.issued", txn.tenant(), txn.subject(), clientId, "amr", txn.amr());
         // OAuth2 token response (snake_case).
         return Map.of(
                 "access_token", t.accessToken(),

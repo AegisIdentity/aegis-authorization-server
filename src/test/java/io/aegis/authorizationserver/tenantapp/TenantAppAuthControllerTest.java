@@ -32,7 +32,8 @@ class TenantAppAuthControllerTest {
     private final AegisTokenMinter minter = mock(AegisTokenMinter.class);
 
     private final TenantAppAuthController controller = new TenantAppAuthController(
-            clients, mfaClient, broker, identityClient, verifier, interactions, minter);
+            clients, mfaClient, broker, identityClient, verifier, interactions, minter,
+            new io.aegis.commons.audit.AuditRecorder(event -> { }));
 
     private void bindClient(String clientId, String tenant) {
         RegisteredClient rc = mock(RegisteredClient.class);
