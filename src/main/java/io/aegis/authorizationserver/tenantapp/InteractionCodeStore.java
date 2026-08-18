@@ -17,10 +17,12 @@ import org.springframework.stereotype.Component;
  * possession of the {@code code_verifier} — for tokens. This keeps the actual credential/assertion off
  * the token endpoint and makes the exchange safe for public (mobile/SPA) clients.
  *
- * <p>In-memory with a TTL and one-time consumption (single dev AS instance). Production moves this to
- * Redis so it survives restarts and spans instances — a documented follow-up.
+ * <p>Storage is delegated to an {@link InteractionCodeRepository}: in-memory for unit tests and a
+ * single-instance local run, Redis when configured, so a code created on one replica can be redeemed
+ * on another and survives a restart. All the security rules below — expiry, single use, client
+ * binding, PKCE — are enforced here regardless of backing store, and single use additionally depends
+ * on the repository's atomic take (see {@link InteractionCodeRepository#consume}).
  */
-@Component
 public class InteractionCodeStore {
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -37,7 +39,16 @@ public class InteractionCodeStore {
         }
     }
 
-    private final Map<String, Transaction> transactions = new ConcurrentHashMap<>();
+    private final InteractionCodeRepository repository;
+
+    /** Process-local storage — unit tests and single-instance local runs. */
+    public InteractionCodeStore() {
+        this(new InMemoryInteractionCodeRepository());
+    }
+
+    public InteractionCodeStore(InteractionCodeRepository repository) {
+        this.repository = repository;
+    }
 
     /** Bind an authenticated user to a fresh interaction code for the client's PKCE challenge. */
     public String create(String tenant, String subject, String clientId, String codeChallenge, String amr) {
@@ -47,9 +58,8 @@ public class InteractionCodeStore {
         byte[] raw = new byte[32];
         RANDOM.nextBytes(raw);
         String code = B64URL.encodeToString(raw);
-        transactions.put(code, new Transaction(tenant, subject, clientId, codeChallenge, amr,
-                Instant.now().plus(TTL)));
-        sweep();
+        repository.save(code, new Transaction(tenant, subject, clientId, codeChallenge, amr,
+                Instant.now().plus(TTL)), TTL);
         return code;
     }
 
@@ -58,7 +68,9 @@ public class InteractionCodeStore {
      * {@code S256(codeVerifier) == codeChallenge}. Removes it (single use) and returns the transaction.
      */
     public Transaction consume(String code, String clientId, String codeVerifier) {
-        Transaction txn = code == null ? null : transactions.remove(code);
+        // The repository's take is atomic, so exactly one concurrent caller can get past this line
+        // with a transaction in hand — that is what makes the code genuinely single-use.
+        Transaction txn = repository.consume(code).orElse(null);
         if (txn == null) {
             throw new InvalidInteractionException("invalid or already-used interaction code");
         }
@@ -90,8 +102,4 @@ public class InteractionCodeStore {
         }
     }
 
-    private void sweep() {
-        Instant now = Instant.now();
-        transactions.entrySet().removeIf(e -> now.isAfter(e.getValue().expiresAt()));
-    }
 }

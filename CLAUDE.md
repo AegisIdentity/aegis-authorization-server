@@ -1,7 +1,33 @@
 # aegis-authorization-server — working notes
 
 **Maturity: core.** OIDC/OAuth2/M2M provider on Spring Authorization Server 7.1. Package
-`io.aegis.authorizationserver`. Port 9000. Store: Postgres (JDBC) — no Redis in v1.
+`io.aegis.authorizationserver`. Port 9000. Stores: Postgres (JDBC) for clients/authorizations/
+consents **and durable per-tenant signing keys**; Redis for the login session (Spring Session) and
+interaction codes.
+
+## This service is the platform's only STATEFUL service — keep its state external
+It hosts interactive login, so it is the one place where "any pod can serve any request" is not free.
+Three things used to live in process memory and no longer do:
+| State | Now | Wired by |
+|---|---|---|
+| per-tenant signing keys | Postgres, AES-GCM encrypted | `keys/JpaTenantKeyStore` |
+| login session | Redis (Spring Session) | `session/RedisSessionConfig` |
+| interaction codes | Redis, `GETDEL` single-use | `tenantapp/TenantAppStateConfig` |
+
+**Redis is required — there is no in-memory fallback, on purpose.** A fallback turns a missing
+Redis into intermittent broken logins that only appear once a second replica exists; failing at
+startup is louder and cheaper to diagnose. Every IT supplies Redis via `TestcontainersConfig`.
+
+**Two Boot 4 traps, both load-bearing and both invisible in configuration:**
+1. `spring.session.store-type` **no longer exists** in Boot 4 — setting it is a silent no-op. The
+   store is not property-selectable.
+2. Boot 4 ships **no session-store auto-configuration at all**. `spring-boot-session` contributes
+   only the filter/cookie/properties, and `spring-boot-data-redis` contributes no session support —
+   so adding `spring-session-data-redis` alone leaves it **inert**, with no `SessionRepository` bean
+   and a silently process-local `HttpSession`. Redis sessions must be opted into in code
+   (`@EnableRedisHttpSession`), and the `spring-boot-session` dependency is required for the filter.
+   `session/RedisSessionWiringIT` asserts the active repository really is Redis-backed, because
+   neither trap is detectable from config review.
 
 ## Where things are
 - `config/AuthorizationServerConfig` — protocol filter chain (Security 7.1 API:
@@ -20,8 +46,20 @@
 - **Per-tenant issuers + signing keys** (`auth/TenantJwkSource`, `multipleIssuersAllowed(true)`, no
   explicit issuer): the issuer is the `/{tenant}` path prefix; each tenant gets its own RSA key/`kid`
   (`aegis-<tenant>`), so a token for tenant A can't be forged for B. Root path (no prefix) = default
-  key, so the single-issuer console flow still works. Dev generates keys on demand; production wraps
-  each in KMS and rotates with overlap, and must NOT regenerate on restart. See ARCHITECTURE.md §7.
+  key, so the single-issuer console flow still works. See ARCHITECTURE.md §7.
+- **Signing keys are DURABLE, not per-process** (`keys/TenantKeyStore` + `keys/JpaTenantKeyStore`,
+  table `tenant_signing_key`). They were previously generated into a `ConcurrentHashMap`, which meant
+  a restart invalidated every issued token and — since the Helm chart runs `replicaCount: 2` with an
+  HPA to 8 and no session affinity — each replica minted a *different* key per tenant, so a token
+  signed by one pod failed against another pod's JWKS. Now: one key per tenant for the whole cluster,
+  surviving restarts. The private half is AES-256-GCM encrypted at rest via
+  `io.aegis.commons.crypto.FieldEncryption` (key from `aegis.crypto.field-key` / `AEGIS_FIELD_ENC_KEY`;
+  fail-closed outside an explicit `dev` profile). A partial unique index
+  (`uk_tenant_signing_key_one_active_per_tenant`) makes concurrent first-use across replicas converge
+  on one key instead of forking — `saveIfAbsent` returns whichever key won. `TenantKeyStore` is the
+  seam a KMS-backed implementation drops into (ADR-0007) without touching callers.
+  Covered by `keys/TenantKeyPersistenceTest` (multi-replica, restart, 8-way race) and
+  `keys/TenantSigningKeyIT` (real Postgres, encryption-at-rest, DB constraint).
 - **Aggregate JWKS + union decoder** (`web/JwksController` → `GET /internal/jwks`): the union of every
   tenant's PUBLIC key. Resource servers point `AEGIS_JWKS_URI` here (root `/oauth2/jwks` has only the
   default key, so per-tenant-key tokens would 401). The AS's own `jwtDecoder` bean likewise validates

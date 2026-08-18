@@ -46,6 +46,34 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
+        <!--
+          Redis + Spring Session. The authorization-server is the platform's one STATEFUL service:
+          it hosts the interactive login session and short-lived interaction codes. Holding either in
+          process memory is incompatible with the Helm chart's replicaCount 2 / HPA-to-8 and its
+          affinity-free ClusterIP Service — a login begun on one pod would break on the next request.
+          Both are Redis-backed when spring.data.redis.host is configured, and fall back to in-memory
+          for unit tests and single-instance local runs (see TenantAppStateConfig).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
+        </dependency>
+        <!--
+          Boot 4 split auto-configuration out of spring-boot-autoconfigure into per-technology
+          modules, and session support lives here. WITHOUT this dependency spring-session-data-redis
+          is inert: no SessionRepository is created and the container silently keeps using
+          process-local HttpSession. Note also that `spring.session.store-type` no longer exists in
+          Boot 4 — the store is chosen by classpath auto-detection, so setting that property would
+          be an unnoticed no-op. Verified by session/RedisSessionWiringIT.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-session</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>

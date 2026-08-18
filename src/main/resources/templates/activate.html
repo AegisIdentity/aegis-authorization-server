@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title th:text="'Activate a device · ' + ${brand.productName}">Activate a device · Aegis</title>
+    <link rel="stylesheet" href="/assets/login.css"/>
+    <link rel="stylesheet" th:href="@{/login/theme.css(tenant=${brandTenant})}"/>
+</head>
+<body>
+<div class="wrap">
+    <div class="brand">
+        <div class="logo">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5l-8-3Z" fill="#ffffff"/>
+                <path d="m9 12 2 2 4-4" stroke="#24347a" stroke-width="2" stroke-linecap="round"
+                      stroke-linejoin="round"/>
+            </svg>
+            <span th:text="${brand.productName}">Aegis Identity</span>
+        </div>
+        <h1>Connect a device to your account.</h1>
+        <p>Devices like TVs, terminals, and command-line tools can't show a sign-in page. Enter the
+            code it displays to finish connecting it — you stay in control of what it can access.</p>
+    </div>
+
+    <div class="form">
+        <div class="card">
+            <div class="title">
+                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5l-8-3Z" fill="#3b5bdb"/>
+                    <path d="m9 12 2 2 4-4" stroke="#ffffff" stroke-width="2" stroke-linecap="round"
+                          stroke-linejoin="round"/>
+                </svg>
+                <h2>Activate a device</h2>
+                <p class="sub">Enter the code shown on your device.</p>
+            </div>
+
+            <!--
+              Posts to the Authorization Server's device-verification endpoint, which matches the
+              user_code to the pending device authorization and then runs consent. CSRF protection
+              applies (this chain does not exempt it), so the code cannot be submitted by a
+              cross-site form on the user's behalf.
+            -->
+            <form th:action="@{/oauth2/device_verification}" method="post">
+                <label for="user_code">Device code</label>
+                <input type="text" id="user_code" name="user_code" class="code-input"
+                       th:value="${userCode}" maxlength="9" placeholder="WDJB-MJHT"
+                       autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus/>
+                <button type="submit">Continue</button>
+            </form>
+
+            <p class="note">Only enter a code shown on a device you are using right now.</p>
+            <p class="note">Protected by OAuth 2.1 · device authorization grant (RFC 8628)</p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

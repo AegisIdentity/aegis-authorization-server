@@ -18,3 +18,10 @@ aegis:
   # Overridable via env; never present outside the dev profile.
   m2m-client-secret: ${AEGIS_M2M_CLIENT_SECRET:dev-only-change-me}
   scim-client-secret: ${AEGIS_SCIM_CLIENT_SECRET:scim-dev-only-change-me}
+  crypto:
+    # Dev-only AES-256 key protecting tenant signing keys at rest. Outside the dev profile this has
+    # no default and startup fails when unset (TenantKeyConfig) — the same fail-closed rule the MFA
+    # and social-broker services use. Publicly known: never protects real data.
+    field-key: ${AEGIS_FIELD_ENC_KEY:YWVnaXMtZGV2LWZpZWxkLWVuY3J5cHRpb24ta2V5MzI=}
+  # Dev-only secret for the edge gateway's client_credentials client (scope: tenant:resolve only).
+  gateway-client-secret: ${AEGIS_GATEWAY_CLIENT_SECRET:gateway-dev-only-change-me}

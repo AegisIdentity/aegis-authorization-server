@@ -29,11 +29,25 @@ spring:
         - classpath:db/postgresql/oauth2-authorization-schema.sql
         - classpath:db/postgresql/oauth2-authorization-consent-schema.sql
         - classpath:db/postgresql/oauth2-registered-client-schema.sql
+        # Aegis-owned (not Spring-shipped): durable per-tenant signing keys, so keys survive a
+        # restart and every replica signs with the same key per tenant.
+        - classpath:db/postgresql/tenant-signing-key-schema.sql
       continue-on-error: false
   jpa:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  session:
+    # The AS is the platform's one stateful service (interactive login). A process-local session is
+    # incompatible with the Helm chart's replicaCount 2 / HPA-to-8 behind an affinity-free Service:
+    # a login begun on one pod breaks on the next request.
+    #
+    # Storage is Redis, selected by CLASSPATH AUTO-DETECTION (spring-session-data-redis +
+    # spring-boot-session). Boot 4 removed `spring.session.store-type`, so there is no property to
+    # switch stores with — the service therefore REQUIRES a reachable Redis, which is the honest
+    # posture for a service that cannot be correct without one. Point it at Redis via
+    # SPRING_DATA_REDIS_HOST / _PORT / _PASSWORD.
+    timeout: 30m
 
 aegis:
   # In-network issuer stamped on the AS's own service tokens (IdentityClient etc.).

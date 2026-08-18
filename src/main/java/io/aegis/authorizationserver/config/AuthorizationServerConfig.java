@@ -42,6 +42,8 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
+import io.aegis.authorizationserver.device.DeviceClientAuthenticationConverter;
+import io.aegis.authorizationserver.device.DeviceClientAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
@@ -76,7 +78,8 @@ public class AuthorizationServerConfig {
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(
             HttpSecurity http, io.aegis.authorizationserver.auth.MfaStepUp mfaStepUp,
-            org.springframework.security.web.savedrequest.RequestCache authorizeRequestCache) throws Exception {
+            org.springframework.security.web.savedrequest.RequestCache authorizeRequestCache,
+            RegisteredClientRepository registeredClients) throws Exception {
         // Spring Security 7.1: apply the configurer via HttpSecurity.with(...). The supporting beans
         // (RegisteredClientRepository, OAuth2AuthorizationService, AuthorizationServerSettings,
         // JWKSource, OAuth2TokenCustomizer) are resolved from the context automatically.
@@ -90,11 +93,37 @@ public class AuthorizationServerConfig {
                 // boundary — a password-only session cannot obtain tokens by navigating to /oauth2/authorize.
                 .addFilterAfter(new io.aegis.authorizationserver.auth.MfaPendingGateFilter(mfaStepUp),
                         org.springframework.security.web.context.SecurityContextHolderFilter.class)
+                // Rate-limit device user_code submission (RFC 8628): the code is short and
+                // brute-forceable, and an authenticated user must not be able to guess a device
+                // authorization pending for someone else. Placed after the context filter so the
+                // authenticated subject is available to key on. See io.aegis...device.
+                .addFilterAfter(new io.aegis.authorizationserver.device.DeviceVerificationThrottleFilter(
+                                AuthorizationServerSettings.builder().build().getDeviceVerificationEndpoint()),
+                        org.springframework.security.web.context.SecurityContextHolderFilter.class)
                 // Allow the SPA (console/portal) to fetch discovery/JWKS and do the PKCE token
                 // exchange cross-origin. Without this, oidc-client-ts's metadata fetch is CORS-blocked
                 // and sign-in silently never redirects.
                 .cors(Customizer.withDefaults())
                 .with(configurer, authorizationServer -> authorizationServer
+                        // Device authorization grant (RFC 8628) for input-constrained clients — TVs,
+                        // CLIs, IoT. The device polls /oauth2/token while the user approves on a
+                        // second screen; `verificationUri` is what the device displays/QR-encodes.
+                        //
+                        // The converter/provider pair is REQUIRED, not decoration: Spring ships no
+                        // client authentication for a public client at this endpoint (its public
+                        // converter is PKCE-based, and the device grant has no code_verifier), so
+                        // without them the request stays anonymous and is rejected before a device
+                        // code is ever issued. See io.aegis.authorizationserver.device.
+                        .clientAuthentication(clientAuth -> clientAuth
+                                .authenticationConverter(new DeviceClientAuthenticationConverter(
+                                        AuthorizationServerSettings.builder().build()
+                                                .getDeviceAuthorizationEndpoint(),
+                                        AuthorizationServerSettings.builder().build()
+                                                .getTokenEndpoint()))
+                                .authenticationProvider(
+                                        new DeviceClientAuthenticationProvider(registeredClients)))
+                        .deviceAuthorizationEndpoint(device -> device.verificationUri("/activate"))
+                        .deviceVerificationEndpoint(Customizer.withDefaults())
                         .oidc(Customizer.withDefaults()))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 .csrf(csrf -> csrf.ignoringRequestMatchers(endpointsMatcher))
@@ -158,11 +187,14 @@ public class AuthorizationServerConfig {
     public org.springframework.boot.ApplicationRunner devClientSeeder(
             RegisteredClientRepository repository,
             @Value("${aegis.m2m-client-secret}") String m2mClientSecret,
-            @Value("${aegis.scim-client-secret}") String scimClientSecret) {
+            @Value("${aegis.scim-client-secret}") String scimClientSecret,
+            @Value("${aegis.gateway-client-secret}") String gatewayClientSecret) {
         return args -> {
             repository.save(devSpaClient());
             repository.save(devMachineClient(m2mClientSecret));
             repository.save(scimServiceClient(scimClientSecret));
+            repository.save(devDeviceClient());
+            repository.save(gatewayServiceClient(gatewayClientSecret));
         };
     }
 
@@ -208,6 +240,84 @@ public class AuthorizationServerConfig {
                         .accessTokenTimeToLive(Duration.ofMinutes(10))
                         .refreshTokenTimeToLive(Duration.ofDays(7))
                         .reuseRefreshTokens(false) // rotate refresh tokens
+                        .build())
+                .build();
+    }
+
+    /**
+     * Public device client: the OAuth 2.0 Device Authorization Grant (RFC 8628), for clients that
+     * cannot host a browser or accept keyboard input — smart TVs, CLIs, IoT devices.
+     *
+     * <p>Flow: the device POSTs to {@code /oauth2/device_authorization} and receives a
+     * {@code device_code}, a short human-typable {@code user_code}, and the verification URI it
+     * shows the user. The user opens that URI on a phone/laptop, authenticates, and approves; the
+     * device meanwhile polls {@code /oauth2/token}, receiving {@code authorization_pending} until
+     * approval and tokens after.
+     *
+     * <p><b>Security notes specific to this grant:</b>
+     * <ul>
+     *   <li><b>No client secret.</b> A device binary cannot keep one — pretending otherwise would be
+     *       security theatre, so this is a public client and the {@code user_code} approval step is
+     *       what actually authorizes issuance.</li>
+     *   <li><b>Consent is required.</b> Unlike the first-party console client, consent is NOT skipped
+     *       here: the user must see which device they are authorizing. Silently approving would let a
+     *       user who mistypes a code hand tokens to a stranger's device.</li>
+     *   <li><b>The {@code user_code} is a brute-forceable secret.</b> It is short by design (it is
+     *       typed by a human), so the verification endpoint needs rate limiting — see the pen-test
+     *       notes. Spring expires codes and consumes them once, but does not throttle guesses.</li>
+     *   <li>Short access-token TTL and rotated refresh tokens, since a device is a
+     *       comparatively poorly-protected environment.</li>
+     * </ul>
+     */
+    private RegisteredClient devDeviceClient() {
+        return RegisteredClient.withId("aegis-dev-device")
+                .clientId("aegis-dev-device")
+                // Public client: a distributed device binary cannot hold a secret.
+                .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+                .authorizationGrantType(AuthorizationGrantType.DEVICE_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                // NOTE: no `openid` scope. Spring Authorization Server rejects `openid` at the device
+                // authorization endpoint with invalid_scope — there is no OIDC device flow, so no
+                // id_token is issued for this grant. A device gets an access token and calls
+                // /userinfo if it needs profile data. Registering `openid` here would look correct
+                // and fail at runtime for every device.
+                .scope(OidcScopes.PROFILE)
+                .scope("read")
+                .clientSettings(ClientSettings.builder()
+                        // The user must see what they are approving — see the class notes above.
+                        .requireAuthorizationConsent(true)
+                        .setting("tenant", "dev")
+                        .build())
+                .tokenSettings(TokenSettings.builder()
+                        .accessTokenTimeToLive(Duration.ofMinutes(10))
+                        .refreshTokenTimeToLive(Duration.ofDays(7))
+                        .reuseRefreshTokens(false) // rotate
+                        .deviceCodeTimeToLive(Duration.ofMinutes(5))
+                        .build())
+                .build();
+    }
+
+    /**
+     * The edge gateway's service client, used solely to map a request {@code Host} to the tenant that
+     * owns it via tenant-service's {@code /api/v1/internal/domains/resolve}.
+     *
+     * <p><b>Why a dedicated client with one narrow scope.</b> The gateway is the most exposed
+     * component on the platform — it is the only thing listening to the public internet. The
+     * cross-tenant read it needs is deliberately NOT satisfied by the existing
+     * {@code tenant:platform-admin} scope, which also authorises creating and modifying tenants: a
+     * compromise at the edge would then be a compromise of the whole control plane. {@code
+     * tenant:resolve} can only answer "which tenant owns this hostname?" for already-verified
+     * domains, which is the least authority that does the job.
+     */
+    private RegisteredClient gatewayServiceClient(String gatewayClientSecret) {
+        return RegisteredClient.withId("aegis-gateway")
+                .clientId("aegis-gateway")
+                .clientSecret("{noop}" + gatewayClientSecret)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("tenant:resolve")
+                .tokenSettings(TokenSettings.builder()
+                        .accessTokenTimeToLive(Duration.ofMinutes(10))
                         .build())
                 .build();
     }
