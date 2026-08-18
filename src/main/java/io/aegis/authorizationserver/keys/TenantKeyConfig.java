@@ -32,22 +32,66 @@ public class TenantKeyConfig {
      */
     private static final String DEV_KEY_B64 = "YWVnaXMtZGV2LWZpZWxkLWVuY3J5cHRpb24ta2V5MzI=";
 
-    /** AES-256 key protecting tenant private-key material at rest. */
+    /**
+     * Where the AES-256 data key that protects tenant signing keys comes from. Precedence:
+     * <ol>
+     *   <li><b>KMS envelope</b> ({@code aegis.crypto.kms.enabled=true}) — the data key is stored
+     *       wrapped by a cloud KMS CMK and unwrapped at startup (ADR-0007). The strongest posture;
+     *       the CMK never leaves KMS.</li>
+     *   <li><b>Static key</b> ({@code aegis.crypto.field-key} set) — a base64 key from a secret
+     *       manager. A legitimate interim posture (the KEK lives in a secret store, not a KMS).</li>
+     *   <li><b>Dev key</b> — only under the explicit {@code dev} profile; a well-known throwaway key.</li>
+     * </ol>
+     * Outside dev with neither KMS nor a static key configured, startup fails — fail-closed, so
+     * production never protects signing keys with the source-controlled dev value.
+     */
     @Bean
-    public FieldEncryption tenantKeyEncryption(Environment env,
-                                               @Value("${aegis.crypto.field-key:}") String configuredKey) {
+    public io.aegis.authorizationserver.keys.kms.DataKeyProvider dataKeyProvider(
+            Environment env,
+            @Value("${aegis.crypto.field-key:}") String configuredKey,
+            @Value("${aegis.crypto.kms.enabled:false}") boolean kmsEnabled,
+            @Value("${aegis.crypto.kms.wrapped-data-key:}") String wrappedDataKey,
+            org.springframework.beans.factory.ObjectProvider<
+                    io.aegis.authorizationserver.keys.kms.KmsKeyUnwrapper> unwrapper) {
+        if (kmsEnabled) {
+            if (!StringUtils.hasText(wrappedDataKey)) {
+                throw new IllegalStateException(
+                        "aegis.crypto.kms.enabled=true requires aegis.crypto.kms.wrapped-data-key "
+                                + "(the KMS-wrapped data key blob, base64)");
+            }
+            io.aegis.authorizationserver.keys.kms.KmsKeyUnwrapper u = unwrapper.getIfAvailable();
+            if (u == null) {
+                throw new IllegalStateException(
+                        "aegis.crypto.kms.enabled=true but no KMS unwrapper is configured (check "
+                                + "aegis.crypto.kms.key-id / region)");
+            }
+            log.info("Tenant key encryption: KMS envelope (data key unwrapped from the CMK).");
+            return new io.aegis.authorizationserver.keys.kms.KmsEnvelopeDataKeyProvider(wrappedDataKey, u);
+        }
         if (StringUtils.hasText(configuredKey)) {
-            return FieldEncryption.fromBase64Key(configuredKey);
+            return new io.aegis.authorizationserver.keys.kms.StaticDataKeyProvider(configuredKey);
         }
         if (devProfileActive(env)) {
             log.warn("Using the built-in DEV field-encryption key — tenant signing keys are NOT "
                     + "protected by a real secret. Only allowed under the explicit 'dev' profile.");
-            return FieldEncryption.fromBase64Key(DEV_KEY_B64);
+            return new io.aegis.authorizationserver.keys.kms.StaticDataKeyProvider(DEV_KEY_B64);
         }
         throw new IllegalStateException(
-                "aegis.crypto.field-key (AEGIS_FIELD_ENC_KEY) must be set — tenant signing keys are "
-                        + "encrypted at rest. Refusing to start with the built-in dev key outside the "
-                        + "explicit 'dev' profile.");
+                "no tenant-key protection configured — set aegis.crypto.kms.enabled=true (+ wrapped "
+                        + "data key) or aegis.crypto.field-key (AEGIS_FIELD_ENC_KEY). Refusing to start "
+                        + "with the built-in dev key outside the explicit 'dev' profile.");
+    }
+
+    /** AES-256 field encryption, keyed by the resolved data key (static or KMS-unwrapped). */
+    @Bean
+    public FieldEncryption tenantKeyEncryption(
+            io.aegis.authorizationserver.keys.kms.DataKeyProvider dataKeyProvider) {
+        byte[] key = dataKeyProvider.resolveDataKey();
+        try {
+            return new FieldEncryption(key);
+        } finally {
+            java.util.Arrays.fill(key, (byte) 0); // don't leave the plaintext data key on the heap
+        }
     }
 
     /**

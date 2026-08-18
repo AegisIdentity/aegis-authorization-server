@@ -53,13 +53,16 @@ startup is louder and cheaper to diagnose. Every IT supplies Redis via `Testcont
   HPA to 8 and no session affinity — each replica minted a *different* key per tenant, so a token
   signed by one pod failed against another pod's JWKS. Now: one key per tenant for the whole cluster,
   surviving restarts. The private half is AES-256-GCM encrypted at rest via
-  `io.aegis.commons.crypto.FieldEncryption` (key from `aegis.crypto.field-key` / `AEGIS_FIELD_ENC_KEY`;
-  fail-closed outside an explicit `dev` profile). A partial unique index
+  `io.aegis.commons.crypto.FieldEncryption`. The AES data key comes from a `keys/kms/DataKeyProvider`:
+  a base64 key (`aegis.crypto.field-key` / `AEGIS_FIELD_ENC_KEY`), OR — when
+  `aegis.crypto.kms.enabled=true` — a **KMS envelope** data key unwrapped from a cloud CMK at startup
+  (`keys/kms/AwsKmsKeyUnwrapper`, AWS SDK v2; the CMK never leaves KMS, ADR-0007). Fail-closed outside
+  an explicit `dev` profile (neither key nor KMS configured → refuse to start). A partial unique index
   (`uk_tenant_signing_key_one_active_per_tenant`) makes concurrent first-use across replicas converge
-  on one key instead of forking — `saveIfAbsent` returns whichever key won. `TenantKeyStore` is the
-  seam a KMS-backed implementation drops into (ADR-0007) without touching callers.
-  Covered by `keys/TenantKeyPersistenceTest` (multi-replica, restart, 8-way race) and
-  `keys/TenantSigningKeyIT` (real Postgres, encryption-at-rest, DB constraint).
+  on one key instead of forking — `saveIfAbsent` returns whichever key won.
+  Covered by `keys/TenantKeyPersistenceTest` (multi-replica, restart, 8-way race),
+  `keys/TenantSigningKeyIT` (real Postgres, encryption-at-rest, DB constraint), and
+  `keys/kms/AwsKmsUnwrapIT` (real KMS Decrypt via LocalStack).
 - **Aggregate JWKS + union decoder** (`web/JwksController` → `GET /internal/jwks`): the union of every
   tenant's PUBLIC key. Resource servers point `AEGIS_JWKS_URI` here (root `/oauth2/jwks` has only the
   default key, so per-tenant-key tokens would 401). The AS's own `jwtDecoder` bean likewise validates
