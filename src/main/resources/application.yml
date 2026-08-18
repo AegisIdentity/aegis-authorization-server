@@ -1,7 +1,15 @@
 server:
   port: 9000
   servlet:
-    session:
+    kafka:
+    # The AS both PUBLISHES (audit + tenant-key-provisioning events) and CONSUMES (tenant lifecycle
+    # -> eager key provisioning). Off unless a broker is configured, so unit tests boot without Kafka.
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:}
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  session:
       cookie:
         # L-core-2: the AS is the stateful login host — harden its session cookie.
         # HttpOnly + SameSite are always safe; Secure is forced on by default and relaxed only under
