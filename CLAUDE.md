@@ -85,6 +85,13 @@ startup is louder and cheaper to diagnose. Every IT supplies Redis via `Testcont
   the authentication needs the same treatment, or login 500s at the token endpoint with
   `InvalidTypeIdException`/"no Creators". Covered by
   `AuthorizationServerFlowsIT#authorization_with_a_custom_login_principal_round_trips_through_the_store`.
+- **…and it must ALSO be `java.io.Serializable`.** That is a second, independent round-trip: the login
+  `SecurityContext` is written to the Redis-backed `HttpSession`, which uses JDK serialization, not
+  Jackson. A custom principal/details type that satisfies the Jackson store above but is not
+  `Serializable` still breaks login — and breaks it *after* the credentials are accepted, so the user
+  gets a 500 Whitelabel page on `/login` rather than an auth error. Both `AegisUserPrincipal` and
+  `TenantWebAuthenticationDetails` (via `WebAuthenticationDetails`) are `Serializable`; keep any new
+  type on that path the same. Covered by `auth/AegisUserPrincipalSerializationTest`.
 - **The login token must carry a `FactorGrantedAuthority`** (`IdentityAuthenticationProvider` grants
   `FACTOR_PASSWORD`). SAS derives the OIDC id_token `auth_time` from the latest factor's `issuedAt`;
   without a factor authority, id_token generation fails with "authenticationTime cannot be null".
