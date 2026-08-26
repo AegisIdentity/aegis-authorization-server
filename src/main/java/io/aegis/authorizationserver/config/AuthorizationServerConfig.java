@@ -192,6 +192,7 @@ public class AuthorizationServerConfig {
         return args -> {
             repository.save(devSpaClient());
             repository.save(devMachineClient(m2mClientSecret));
+            repository.save(devAgentClient(m2mClientSecret));
             repository.save(scimServiceClient(scimClientSecret));
             repository.save(devDeviceClient());
             repository.save(gatewayServiceClient(gatewayClientSecret));
@@ -323,6 +324,33 @@ public class AuthorizationServerConfig {
     }
 
     /** Confidential machine-to-machine client: client_credentials (host-to-host). */
+    /**
+     * Dev agent client: exercises RFC 8693 token exchange (ADR-0012).
+     *
+     * <p>Registered with a <b>short</b> access-token lifetime because an agent token is exchanged
+     * per task, not held for a session, and because agent tokens traverse attacker-influenceable
+     * content — a shorter window is the cheapest mitigation available while DPoP (ADR-0017) is
+     * still being implemented.
+     */
+    private RegisteredClient devAgentClient(String agentClientSecret) {
+        return RegisteredClient.withId("aegis-dev-agent")
+                .clientId("aegis-dev-agent")
+                .clientSecret("{noop}" + agentClientSecret)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.TOKEN_EXCHANGE)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                // Deliberately narrow: an agent client's registered scopes are the CEILING for every
+                // exchange it performs, and ScopeNarrowing then caps each hop at the subject token's
+                // own scopes. Two independent bounds, neither sufficient alone.
+                .scope("files:read")
+                .scope("mcp:invoke")
+                .clientSettings(ClientSettings.builder().setting("tenant", "dev").build())
+                .tokenSettings(TokenSettings.builder()
+                        .accessTokenTimeToLive(Duration.ofMinutes(2))
+                        .build())
+                .build();
+    }
+
     private RegisteredClient devMachineClient(String m2mClientSecret) {
         return RegisteredClient.withId("aegis-dev-m2m")
                 .clientId("aegis-dev-m2m")
@@ -408,8 +436,13 @@ public class AuthorizationServerConfig {
      * registered tenant. This is what makes tokens tenant-scoped for downstream resource servers.
      */
     @Bean
-    public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
+    public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
+            io.aegis.authorizationserver.delegation.DelegationTokenCustomizer delegation) {
         return context -> {
+            // Delegation first: it may REFUSE the exchange (scope widening), and there is no point
+            // decorating a token that is not going to be issued.
+            delegation.customize(context);
+
             Object principal = context.getPrincipal() == null ? null : context.getPrincipal().getPrincipal();
             if (principal instanceof AegisUserPrincipal user) {
                 // Interactive login: the tenant is the authenticated user's real tenant.
@@ -423,6 +456,20 @@ public class AuthorizationServerConfig {
                 }
             }
         };
+    }
+
+    /**
+     * RFC 8693 delegation semantics (ADR-0012): nests the actor chain into {@code act}, keeps
+     * {@code sub} pinned to the root subject, and refuses any exchange that widens authority.
+     *
+     * <p>{@code ObjectProvider} because a service may boot without an audit publisher wired; a
+     * missing audit sink must not stop the authorization server from starting.
+     */
+    @Bean
+    public io.aegis.authorizationserver.delegation.DelegationTokenCustomizer delegationTokenCustomizer(
+            org.springframework.beans.factory.ObjectProvider<io.aegis.commons.audit.AuditEventPublisher> audit) {
+        return new io.aegis.authorizationserver.delegation.DelegationTokenCustomizer(
+                audit.getIfAvailable(() -> event -> { }));
     }
 
     /** Signs the AS's own internal service tokens (used by IdentityClient to call identity-service). */

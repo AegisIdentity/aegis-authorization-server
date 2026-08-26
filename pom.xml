@@ -105,6 +105,14 @@
             <groupId>io.aegis</groupId>
             <artifactId>aegis-web-commons</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.aegis</groupId>
+            <artifactId>aegis-agent-commons</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.aegis</groupId>
+            <artifactId>aegis-vault-commons</artifactId>
+        </dependency>
 
         <!-- Test -->
         <dependency>
