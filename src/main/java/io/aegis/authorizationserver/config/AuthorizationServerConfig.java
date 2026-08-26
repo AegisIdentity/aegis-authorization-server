@@ -383,6 +383,15 @@ public class AuthorizationServerConfig {
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .scope("identity:users:read")
                 .scope("tenant:read")
+                // Agent-platform scopes, dev profile only. These exist so the cross-service E2E
+                // script can exercise the real gateway->service paths with a real token instead of
+                // asserting on 401s, which prove routing but not behaviour.
+                .scope("tenant:admin")
+                .scope("identity:agents:read")
+                .scope("identity:agents:write")
+                .scope("agents:registry:read")
+                .scope("agents:registry:write")
+                .scope("agents:risk:read")
                 .clientSettings(ClientSettings.builder().setting("tenant", "dev").build())
                 .tokenSettings(TokenSettings.builder()
                         .accessTokenTimeToLive(Duration.ofMinutes(5))
