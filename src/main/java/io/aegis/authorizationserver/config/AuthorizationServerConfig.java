@@ -344,7 +344,14 @@ public class AuthorizationServerConfig {
                 // own scopes. Two independent bounds, neither sufficient alone.
                 .scope("files:read")
                 .scope("mcp:invoke")
-                .clientSettings(ClientSettings.builder().setting("tenant", "dev").build())
+                // ADR-0017: this is an agent client, so it may not hold a bearer token. An agent
+                // processes attacker-influenceable content in the same context as its credentials,
+                // which is exactly the exposure sender-constraining removes.
+                .clientSettings(ClientSettings.builder()
+                        .setting("tenant", "dev")
+                        .setting(io.aegis.authorizationserver.dpop.SenderConstraintCustomizer
+                                .DPOP_REQUIRED_SETTING, true)
+                        .build())
                 .tokenSettings(TokenSettings.builder()
                         .accessTokenTimeToLive(Duration.ofMinutes(2))
                         .build())
@@ -437,10 +444,14 @@ public class AuthorizationServerConfig {
      */
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
-            io.aegis.authorizationserver.delegation.DelegationTokenCustomizer delegation) {
+            io.aegis.authorizationserver.delegation.DelegationTokenCustomizer delegation,
+            io.aegis.authorizationserver.dpop.SenderConstraintCustomizer senderConstraint) {
         return context -> {
-            // Delegation first: it may REFUSE the exchange (scope widening), and there is no point
-            // decorating a token that is not going to be issued.
+            // Sender-constraint first: it may REFUSE outright (an agent client that presented no
+            // DPoP proof), and nothing else is worth computing for a token that will not be issued.
+            senderConstraint.customize(context);
+
+            // Delegation next: it may also REFUSE the exchange (scope widening).
             delegation.customize(context);
 
             Object principal = context.getPrincipal() == null ? null : context.getPrincipal().getPrincipal();
@@ -470,6 +481,15 @@ public class AuthorizationServerConfig {
             org.springframework.beans.factory.ObjectProvider<io.aegis.commons.audit.AuditEventPublisher> audit) {
         return new io.aegis.authorizationserver.delegation.DelegationTokenCustomizer(
                 audit.getIfAvailable(() -> event -> { }));
+    }
+
+    /**
+     * Sender-constrained tokens (ADR-0017): binds the access token to the DPoP key that proved
+     * possession, and refuses a bearer token to any client marked as requiring one.
+     */
+    @Bean
+    public io.aegis.authorizationserver.dpop.SenderConstraintCustomizer senderConstraintCustomizer() {
+        return new io.aegis.authorizationserver.dpop.SenderConstraintCustomizer();
     }
 
     /** Signs the AS's own internal service tokens (used by IdentityClient to call identity-service). */
