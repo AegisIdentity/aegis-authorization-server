@@ -58,6 +58,20 @@ spring:
     timeout: 30m
 
 aegis:
+  # --- Vault-backed token signing (ADR-0015, migration per VAULT-ARCHITECTURE.md §7) ------------
+  # Default OFF: the cutover is rotation-based and reversible. Enabling publishes the Vault kid into
+  # JWKS and switches signing onto Transit, where the private key never enters this process. The old
+  # KMS kid stays published and verifiable until every token it signed has expired.
+  vault:
+    enabled: ${AEGIS_VAULT_ENABLED:false}
+    uri: ${AEGIS_VAULT_URI:http://localhost:8200}
+    isolation: ${AEGIS_VAULT_ISOLATION:PATH}
+    mount: ${AEGIS_VAULT_MOUNT:aegis}
+    token: ${AEGIS_VAULT_TOKEN:}
+    signing:
+      enabled: ${AEGIS_VAULT_SIGNING_ENABLED:false}
+    transit:
+      token-signing-key: ${AEGIS_VAULT_TOKEN_SIGNING_KEY:token-signing}
   # In-network issuer stamped on the AS's own service tokens (IdentityClient etc.).
   issuer: ${AEGIS_ISSUER:http://localhost:9000}
   # Public base URL apps use to reach the platform — the edge gateway in a real deployment.
