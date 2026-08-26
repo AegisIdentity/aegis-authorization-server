@@ -519,10 +519,28 @@ public class AuthorizationServerConfig {
      * under a per-tenant issuer, e.g. through the gateway) would be rejected. Selection is by kid;
      * signing is unaffected — encoders still use the context-scoped {@code TenantJwkSource}.
      */
+    /**
+     * The union of every key this AS can verify against — local store <em>and</em> Vault.
+     *
+     * <p>Shared with {@code JwksController} on purpose. When the two were separate, the AS published
+     * a Vault key that downstream services used happily, then rejected tokens signed with that very
+     * key at its own {@code /userinfo}, because this decoder still only knew the local key set.
+     * Deriving both from one component makes that divergence impossible.
+     */
     @Bean
-    public JwtDecoder jwtDecoder(io.aegis.authorizationserver.auth.TenantJwkSource jwkSource) {
+    public io.aegis.authorizationserver.keys.vault.AggregateVerificationKeys aggregateVerificationKeys(
+            io.aegis.authorizationserver.auth.TenantJwkSource jwkSource,
+            org.springframework.beans.factory.ObjectProvider<
+                    io.aegis.authorizationserver.keys.vault.VaultTenantSigner> vaultSigner) {
+        return new io.aegis.authorizationserver.keys.vault.AggregateVerificationKeys(jwkSource, vaultSigner);
+    }
+
+    @Bean
+    public JwtDecoder jwtDecoder(
+            io.aegis.authorizationserver.keys.vault.AggregateVerificationKeys keys) {
         return OAuth2AuthorizationServerConfiguration.jwtDecoder(
-                (jwkSelector, context) -> jwkSelector.select(jwkSource.allKeys()));
+                (jwkSelector, context) ->
+                        jwkSelector.select(new com.nimbusds.jose.jwk.JWKSet(keys.all())));
     }
 
     @Bean

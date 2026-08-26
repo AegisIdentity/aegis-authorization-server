@@ -43,6 +43,9 @@ class VaultTenantSignerTest {
     private static final class RecordingClient implements VaultClient {
         final List<String> paths = new ArrayList<>();
         final Map<String, Map<String, Object>> responses = new LinkedHashMap<>();
+        /** When true, a create-key write makes the key readable afterwards, as Vault would. */
+        boolean createsKeyOnWrite;
+        String publicPem;
 
         @Override
         public Map<String, Object> read(String path, String namespace) {
@@ -53,6 +56,10 @@ class VaultTenantSignerTest {
         @Override
         public Map<String, Object> write(String path, Map<String, Object> data, String namespace) {
             paths.add("WRITE " + path);
+            if (createsKeyOnWrite && path.contains("/transit/keys/") && !path.endsWith("/rotate")) {
+                responses.put(path, Map.of("data", Map.of("latest_version", 1,
+                        "keys", Map.of("1", Map.of("public_key", publicPem)))));
+            }
             return responses.getOrDefault(path, Map.of());
         }
 
@@ -139,6 +146,41 @@ class VaultTenantSignerTest {
         signer = new VaultTenantSigner(transit, "token-signing");
 
         assertThat(signer.kid("default")).isEqualTo("aegis-default-v1");
+    }
+
+    @Test
+    void a_tenant_with_no_key_yet_has_one_provisioned_on_first_use() {
+        // Tenants are created at runtime, so bootstrap cannot know them all. Mirrors what
+        // TenantJwkSource already does for the local key store: create on first use rather than
+        // requiring an out-of-band provisioning step for every new tenant.
+        RecordingClient c = new RecordingClient();
+        // First read returns nothing; after the create, the key exists.
+        c.createsKeyOnWrite = true;
+        c.publicPem = publicPem;
+
+        VaultTransit transit = new VaultTransit(c,
+                new TenantVaultPaths("aegis", VaultIsolation.PATH), event -> { });
+        VaultTenantSigner signer = new VaultTenantSigner(transit, "token-signing");
+
+        assertThat(signer.kid("brand-new")).isEqualTo("aegis-brand-new-v1");
+        assertThat(c.paths).contains("WRITE aegis/transit/keys/brand-new-token-signing");
+    }
+
+    @Test
+    void provisioning_is_attempted_only_once_per_lookup() {
+        // A tenant whose key genuinely cannot be created must not spin: one create attempt, then a
+        // clear failure. Retrying forever would turn a misconfigured policy into a hot loop against
+        // Vault on the token path.
+        RecordingClient c = new RecordingClient();   // never creates anything
+        VaultTransit transit = new VaultTransit(c,
+                new TenantVaultPaths("aegis", VaultIsolation.PATH), event -> { });
+        VaultTenantSigner signer = new VaultTenantSigner(transit, "token-signing");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> signer.kid("hopeless"))
+                .isInstanceOf(io.aegis.commons.vault.VaultException.class);
+
+        long creates = c.paths.stream().filter(p -> p.startsWith("WRITE aegis/transit/keys/")).count();
+        assertThat(creates).isEqualTo(1);
     }
 
     @Test

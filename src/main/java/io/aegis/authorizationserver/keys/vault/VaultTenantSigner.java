@@ -103,13 +103,38 @@ public class VaultTenantSigner implements TenantSigner {
         publicCache.remove(tenant);
     }
 
+    /**
+     * Public key versions for a tenant, provisioning the key on first use.
+     *
+     * <p>Tenants are created at runtime, so no bootstrap step can know them all in advance — the
+     * same reason {@code TenantJwkSource} creates a local key on first use rather than requiring
+     * out-of-band provisioning. Creation is attempted <b>once</b>: a tenant whose key genuinely
+     * cannot be created must fail clearly rather than spin, because this sits on the token path and
+     * a retry loop would turn a misconfigured Vault policy into a hot loop against Vault.
+     */
     private List<VaultPublicKey> versions(String tenant) {
         CachedKeys cached = publicCache.get(tenant);
         if (cached != null && cached.expiresAtMillis() > System.currentTimeMillis()) {
             return cached.versions();
         }
+
         List<VaultPublicKey> fresh = TenantContext.callAs(TenantId.of(tenant),
                 () -> transit.publicKeyVersions(keyName()));
+
+        if (fresh.isEmpty()) {
+            log.info("vault_signing_key_provisioning tenant={}", tenant);
+            try {
+                TenantContext.runAs(TenantId.of(tenant),
+                        () -> transit.createKey(keyName(), TransitKeyType.RSA_2048));
+            } catch (RuntimeException e) {
+                // Losing the race with another replica is expected and fine — the re-read below
+                // finds the winner's key, exactly as the local key store's first-writer-wins does.
+                log.debug("vault_signing_key_create_failed tenant={}: {}", tenant, e.toString());
+            }
+            fresh = TenantContext.callAs(TenantId.of(tenant),
+                    () -> transit.publicKeyVersions(keyName()));
+        }
+
         publicCache.put(tenant,
                 new CachedKeys(fresh, System.currentTimeMillis() + PUBLIC_CACHE_TTL.toMillis()));
         return fresh;
