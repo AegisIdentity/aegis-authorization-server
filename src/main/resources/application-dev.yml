@@ -17,6 +17,9 @@ aegis:
   # Dev-only client secrets consumed exclusively by the (dev-profile-gated) devClientSeeder (H1).
   # Overridable via env; never present outside the dev profile.
   m2m-client-secret: ${AEGIS_M2M_CLIENT_SECRET:dev-only-change-me}
+  # Distinct from the m2m secret: SAS's JdbcRegisteredClientRepository requires client secrets to be
+  # unique, so sharing one makes seeding fail at startup.
+  agent-client-secret: ${AEGIS_AGENT_CLIENT_SECRET:agent-dev-only-change-me}
   scim-client-secret: ${AEGIS_SCIM_CLIENT_SECRET:scim-dev-only-change-me}
   crypto:
     # Dev-only AES-256 key protecting tenant signing keys at rest. Outside the dev profile this has

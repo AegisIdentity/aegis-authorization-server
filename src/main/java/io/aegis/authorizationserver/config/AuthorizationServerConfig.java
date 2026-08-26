@@ -198,12 +198,15 @@ public class AuthorizationServerConfig {
     public org.springframework.boot.ApplicationRunner devClientSeeder(
             RegisteredClientRepository repository,
             @Value("${aegis.m2m-client-secret}") String m2mClientSecret,
+            @Value("${aegis.agent-client-secret}") String agentClientSecret,
             @Value("${aegis.scim-client-secret}") String scimClientSecret,
             @Value("${aegis.gateway-client-secret}") String gatewayClientSecret) {
         return args -> {
             repository.save(devSpaClient());
             repository.save(devMachineClient(m2mClientSecret));
-            repository.save(devAgentClient(m2mClientSecret));
+            // Its OWN secret: JdbcRegisteredClientRepository enforces secret uniqueness across
+            // clients, so reusing the m2m secret makes the dev profile fail to start outright.
+            repository.save(devAgentClient(agentClientSecret));
             repository.save(scimServiceClient(scimClientSecret));
             repository.save(devDeviceClient());
             repository.save(gatewayServiceClient(gatewayClientSecret));
@@ -455,8 +458,19 @@ public class AuthorizationServerConfig {
      */
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
-            io.aegis.authorizationserver.delegation.DelegationTokenCustomizer delegation,
-            io.aegis.authorizationserver.dpop.SenderConstraintCustomizer senderConstraint) {
+            org.springframework.beans.factory.ObjectProvider<io.aegis.commons.audit.AuditEventPublisher> audit) {
+        // Constructed here rather than injected as beans, and that is load-bearing rather than
+        // stylistic. Both collaborators implement OAuth2TokenCustomizer<JwtEncodingContext>; exposing
+        // them as beans put THREE candidates of that type in the context, Spring Authorization Server
+        // resolves its customizer by type, and with an ambiguous match it silently used none at all —
+        // dropping the `tenant` claim from every token. The failure is invisible to unit tests
+        // (each customizer works perfectly in isolation) and only an integration test that boots the
+        // real context can catch it. Keeping exactly one bean of this type removes the ambiguity by
+        // construction.
+        var delegation = new io.aegis.authorizationserver.delegation.DelegationTokenCustomizer(
+                audit.getIfAvailable(() -> event -> { }));
+        var senderConstraint = new io.aegis.authorizationserver.dpop.SenderConstraintCustomizer();
+
         return context -> {
             // Sender-constraint first: it may REFUSE outright (an agent client that presented no
             // DPoP proof), and nothing else is worth computing for a token that will not be issued.
@@ -478,29 +492,6 @@ public class AuthorizationServerConfig {
                 }
             }
         };
-    }
-
-    /**
-     * RFC 8693 delegation semantics (ADR-0012): nests the actor chain into {@code act}, keeps
-     * {@code sub} pinned to the root subject, and refuses any exchange that widens authority.
-     *
-     * <p>{@code ObjectProvider} because a service may boot without an audit publisher wired; a
-     * missing audit sink must not stop the authorization server from starting.
-     */
-    @Bean
-    public io.aegis.authorizationserver.delegation.DelegationTokenCustomizer delegationTokenCustomizer(
-            org.springframework.beans.factory.ObjectProvider<io.aegis.commons.audit.AuditEventPublisher> audit) {
-        return new io.aegis.authorizationserver.delegation.DelegationTokenCustomizer(
-                audit.getIfAvailable(() -> event -> { }));
-    }
-
-    /**
-     * Sender-constrained tokens (ADR-0017): binds the access token to the DPoP key that proved
-     * possession, and refuses a bearer token to any client marked as requiring one.
-     */
-    @Bean
-    public io.aegis.authorizationserver.dpop.SenderConstraintCustomizer senderConstraintCustomizer() {
-        return new io.aegis.authorizationserver.dpop.SenderConstraintCustomizer();
     }
 
     /** Signs the AS's own internal service tokens (used by IdentityClient to call identity-service). */
