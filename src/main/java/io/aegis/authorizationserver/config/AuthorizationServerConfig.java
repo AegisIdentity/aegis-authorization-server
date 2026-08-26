@@ -77,6 +77,8 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(
+            org.springframework.beans.factory.ObjectProvider<
+                    io.aegis.authorizationserver.idjag.IdJagAuthenticationProvider> idJagProvider,
             HttpSecurity http, io.aegis.authorizationserver.auth.MfaStepUp mfaStepUp,
             org.springframework.security.web.savedrequest.RequestCache authorizeRequestCache,
             RegisteredClientRepository registeredClients) throws Exception {
@@ -124,6 +126,15 @@ public class AuthorizationServerConfig {
                                         new DeviceClientAuthenticationProvider(registeredClients)))
                         .deviceAuthorizationEndpoint(device -> device.verificationUri("/activate"))
                         .deviceVerificationEndpoint(Customizer.withDefaults())
+                        // RFC 7523 jwt-bearer, for redeeming an ID-JAG (ADR-0012). Spring
+                        // Authorization Server 7.1 ships no jwt-bearer grant — verified against the
+                        // jar — so the converter/provider pair is what makes MCP Enterprise-Managed
+                        // Authorization servable at all. Registered conditionally so the AS still
+                        // starts in environments where the ID-JAG issuer allow-list is unset.
+                        .tokenEndpoint(token -> idJagProvider.ifAvailable(provider -> token
+                                .accessTokenRequestConverter(
+                                        new io.aegis.authorizationserver.idjag.IdJagAuthenticationConverter())
+                                .authenticationProvider(provider)))
                         .oidc(Customizer.withDefaults()))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 .csrf(csrf -> csrf.ignoringRequestMatchers(endpointsMatcher))

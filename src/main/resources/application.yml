@@ -72,6 +72,13 @@ aegis:
       enabled: ${AEGIS_VAULT_SIGNING_ENABLED:false}
     transit:
       token-signing-key: ${AEGIS_VAULT_TOKEN_SIGNING_KEY:token-signing}
+  # --- MCP Enterprise-Managed Authorization: ID-JAG redemption (ADR-0012) ----------------------
+  # OFF until an operator names the issuers allowed to mint assertions for this server's resources.
+  # An empty allow-list trusts nothing, so enabling without configuring simply rejects everything —
+  # which is the correct failure direction.
+  idjag:
+    enabled: ${AEGIS_IDJAG_ENABLED:false}
+    trusted-issuers: ${AEGIS_IDJAG_TRUSTED_ISSUERS:}
   # In-network issuer stamped on the AS's own service tokens (IdentityClient etc.).
   issuer: ${AEGIS_ISSUER:http://localhost:9000}
   # Public base URL apps use to reach the platform — the edge gateway in a real deployment.
